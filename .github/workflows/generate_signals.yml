@@ -2,9 +2,8 @@ name: Generate Trading Signals
 
 on:
   schedule:
-    # Run every 3 minutes
     - cron: '*/3 * * * *'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   generate-signals:
@@ -21,7 +20,8 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install -r requirements_api.txt
+          python -m pip install --upgrade pip
+          pip install requests pandas numpy python-dotenv supabase pandas-ta scikit-learn lightgbm
       
       - name: Generate signals
         env:
