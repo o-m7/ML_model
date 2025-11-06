@@ -148,44 +148,59 @@ def load_and_update_data(symbol: str, timeframe: str):
     
     data_file = CONFIG.FEATURE_STORE / symbol / f"{symbol}_{timeframe}.parquet"
     
-    # Load existing data
+    # Check if we have existing data
     if data_file.exists():
+        # INCREMENTAL UPDATE: We have historical data
         old_df = pd.read_parquet(data_file)
         if 'timestamp' not in old_df.columns:
             old_df = old_df.reset_index()
         old_df['timestamp'] = pd.to_datetime(old_df['timestamp'], utc=True)
         print(f"  📂 Loaded {len(old_df):,} existing bars (up to {old_df['timestamp'].iloc[-1]})")
+        
+        # Fetch new week
+        new_df = fetch_weekly_data(symbol, timeframe, days_back=7)
+        if new_df is None:
+            print(f"    Using existing data only")
+            return old_df
+        
+        # Remove any overlapping timestamps
+        last_timestamp = old_df['timestamp'].iloc[-1]
+        new_df = new_df[new_df['timestamp'] > last_timestamp]
+        
+        if len(new_df) == 0:
+            print(f"    No new data after {last_timestamp}")
+            return old_df
+        
+        # Calculate TA indicators for new data
+        print(f"    🔧 Calculating TA indicators for {len(new_df)} new bars...")
+        new_df_with_ta = calculate_ta_indicators(new_df)
+        
+        # Combine
+        combined = pd.concat([old_df, new_df_with_ta], ignore_index=True)
+        combined = combined.sort_values('timestamp').reset_index(drop=True)
+        
+        # Recalculate TA indicators for the entire combined dataset to ensure consistency
+        print(f"    🔧 Recalculating TA indicators for all {len(combined):,} bars...")
+        combined = calculate_ta_indicators(combined)
+        
+        print(f"    ✅ Updated: {len(old_df):,} old + {len(new_df):,} new = {len(combined):,} total")
+        
     else:
-        print(f"  ⚠️  No existing data found at {data_file}")
-        return None
-    
-    # Fetch new week
-    new_df = fetch_weekly_data(symbol, timeframe, days_back=7)
-    if new_df is None:
-        print(f"    Using existing data only")
-        return old_df
-    
-    # Remove any overlapping timestamps
-    last_timestamp = old_df['timestamp'].iloc[-1]
-    new_df = new_df[new_df['timestamp'] > last_timestamp]
-    
-    if len(new_df) == 0:
-        print(f"    No new data after {last_timestamp}")
-        return old_df
-    
-    # Calculate TA indicators for new data
-    print(f"    🔧 Calculating TA indicators for {len(new_df)} new bars...")
-    new_df_with_ta = calculate_ta_indicators(new_df)
-    
-    # Combine
-    combined = pd.concat([old_df, new_df_with_ta], ignore_index=True)
-    combined = combined.sort_values('timestamp').reset_index(drop=True)
-    
-    # Recalculate TA indicators for the entire combined dataset to ensure consistency
-    print(f"    🔧 Recalculating TA indicators for all {len(combined):,} bars...")
-    combined = calculate_ta_indicators(combined)
-    
-    print(f"    ✅ Updated: {len(old_df):,} old + {len(new_df):,} new = {len(combined):,} total")
+        # FIRST RUN: No existing data, fetch full historical dataset
+        print(f"  ⚠️  No existing data - fetching full historical dataset...")
+        
+        # Fetch 180 days of historical data (enough for training)
+        combined = fetch_weekly_data(symbol, timeframe, days_back=180)
+        
+        if combined is None or len(combined) < 500:
+            print(f"    ❌ Failed to fetch historical data")
+            return None
+        
+        # Calculate TA indicators for all data
+        print(f"    🔧 Calculating TA indicators for {len(combined):,} bars...")
+        combined = calculate_ta_indicators(combined)
+        
+        print(f"    ✅ Fetched {len(combined):,} bars")
     
     # Save
     data_path = CONFIG.FEATURE_STORE / symbol

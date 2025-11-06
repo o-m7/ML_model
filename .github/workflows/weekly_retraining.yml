@@ -20,6 +20,15 @@ jobs:
         with:
           python-version: '3.12'
       
+      - name: Download previous data (if exists)
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: weekly_retraining.yml
+          name: feature-store-data
+          path: feature_store/
+          if_no_artifact_found: warn
+      
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
@@ -38,6 +47,14 @@ jobs:
           echo "================================================================================================="
           echo "RETRAINING COMPLETE"
           echo "================================================================================================="
+      
+      - name: Upload updated feature store (for next run)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feature-store-data
+          path: feature_store/
+          retention-days: 14
       
       - name: Upload training logs
         if: always()
