@@ -40,4 +40,4 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python3 live_trading_engine.py once
+          python3 generate_signals_standalone.py
