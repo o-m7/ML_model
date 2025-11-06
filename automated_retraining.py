@@ -102,15 +102,24 @@ def calculate_ta_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def fetch_weekly_data(symbol: str, timeframe: str, days_back: int = 7):
-    """Fetch ONLY the last week of data from Polygon."""
-    print(f"  📥 Fetching last {days_back} days of {symbol} {timeframe}...")
+def fetch_data_from_date(symbol: str, timeframe: str, start_date: str = None, days_back: int = None):
+    """Fetch data from Polygon - either from specific date or X days back."""
     
     ticker = TICKER_MAP.get(symbol, symbol)
     minutes = TIMEFRAME_MINUTES[timeframe]
     
     end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(days=days_back)
+    
+    if start_date:
+        # Fetch from specific date to now
+        start_time = pd.to_datetime(start_date, utc=True)
+        print(f"  📥 Fetching {symbol} {timeframe} from {start_date} to now...")
+    elif days_back:
+        # Fetch last X days
+        start_time = end_time - timedelta(days=days_back)
+        print(f"  📥 Fetching last {days_back} days of {symbol} {timeframe}...")
+    else:
+        raise ValueError("Must specify either start_date or days_back")
     
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{minutes}/minute/{int(start_time.timestamp()*1000)}/{int(end_time.timestamp()*1000)}"
     
@@ -157,8 +166,8 @@ def load_and_update_data(symbol: str, timeframe: str):
         old_df['timestamp'] = pd.to_datetime(old_df['timestamp'], utc=True)
         print(f"  📂 Loaded {len(old_df):,} existing bars (up to {old_df['timestamp'].iloc[-1]})")
         
-        # Fetch new week
-        new_df = fetch_weekly_data(symbol, timeframe, days_back=7)
+        # Fetch new week only
+        new_df = fetch_data_from_date(symbol, timeframe, days_back=7)
         if new_df is None:
             print(f"    Using existing data only")
             return old_df
@@ -186,11 +195,11 @@ def load_and_update_data(symbol: str, timeframe: str):
         print(f"    ✅ Updated: {len(old_df):,} old + {len(new_df):,} new = {len(combined):,} total")
         
     else:
-        # FIRST RUN: No existing data, fetch full historical dataset
-        print(f"  ⚠️  No existing data - fetching full historical dataset...")
+        # FIRST RUN: No existing data, fetch from October 22, 2025 to now
+        print(f"  ⚠️  No existing data - fetching from October 22, 2025 to now...")
         
-        # Fetch 180 days of historical data (enough for training)
-        combined = fetch_weekly_data(symbol, timeframe, days_back=180)
+        # Fetch from 2025-10-22 to today (matches training data period)
+        combined = fetch_data_from_date(symbol, timeframe, start_date='2025-10-22')
         
         if combined is None or len(combined) < 500:
             print(f"    ❌ Failed to fetch historical data")
@@ -427,7 +436,10 @@ def main():
     print(f"AUTOMATED WEEKLY INCREMENTAL RETRAINING")
     print(f"{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("="*80)
-    print(f"\n📌 Strategy: Fetch LAST WEEK → Append → Retrain with EXACT production methodology")
+    print(f"\n📌 Strategy:")
+    print(f"   • First run: Fetch from 2025-10-22 to now")
+    print(f"   • Weekly: Fetch last 7 days → Append → Retrain")
+    print(f"   • Uses EXACT production methodology")
     print("")
     
     results = {
