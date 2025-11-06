@@ -34,10 +34,12 @@ jobs:
           echo "=== Testing imports ==="
           python3 -c "import requests; import pandas; import numpy; print('All core modules working!')"
       
-      - name: Generate signals
+      - name: Generate signals (standalone - no API required)
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
+          echo "=== Starting standalone signal generator ==="
+          ls -la generate_signals_standalone.py
           python3 generate_signals_standalone.py
