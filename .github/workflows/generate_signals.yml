@@ -1,7 +1,5 @@
 name: Generate Trading Signals
 
-
-
 on:
   schedule:
     # Run every 5 minutes
