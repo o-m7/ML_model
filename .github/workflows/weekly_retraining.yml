@@ -23,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install requests pandas numpy python-dotenv supabase pandas-ta scikit-learn lightgbm pyarrow fastparquet
+          python3 -m pip install requests pandas numpy python-dotenv supabase scikit-learn lightgbm pyarrow fastparquet
       
       - name: Run automated retraining
         env:
