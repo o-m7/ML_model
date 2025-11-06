@@ -18,16 +18,21 @@ jobs:
         with:
           python-version: '3.12'
       
-      - name: Install dependencies
+      - name: Upgrade pip
+        run: python3 -m pip install --upgrade pip
+        
+      - name: Install core packages
+        run: python3 -m pip install requests pandas numpy
+        
+      - name: Install additional packages
+        run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn lightgbm
+        
+      - name: Verify installation
         run: |
-          python3 -m pip install --upgrade pip --no-cache-dir
-          python3 -m pip install --no-cache-dir requests pandas numpy python-dotenv supabase pandas-ta scikit-learn lightgbm onnxruntime
           echo "=== Installed packages ==="
           python3 -m pip list
-          echo "=== Python3 version ==="
-          python3 --version
-          echo "=== Checking requests module ==="
-          python3 -c "import requests; print('requests module found!')"
+          echo "=== Testing imports ==="
+          python3 -c "import requests; import pandas; import numpy; print('All core modules working!')"
       
       - name: Generate signals
         env:
