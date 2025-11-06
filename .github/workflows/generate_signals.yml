@@ -20,14 +20,14 @@ jobs:
       
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip --no-cache-dir
-          pip install --no-cache-dir requests pandas numpy python-dotenv supabase pandas-ta scikit-learn lightgbm onnxruntime
+          python3 -m pip install --upgrade pip --no-cache-dir
+          python3 -m pip install --no-cache-dir requests pandas numpy python-dotenv supabase pandas-ta scikit-learn lightgbm onnxruntime
           echo "=== Installed packages ==="
-          pip list
-          echo "=== Python version ==="
-          python --version
+          python3 -m pip list
+          echo "=== Python3 version ==="
+          python3 --version
           echo "=== Checking requests module ==="
-          python -c "import requests; print('requests module found!')"
+          python3 -c "import requests; print('requests module found!')"
       
       - name: Generate signals
         env:
