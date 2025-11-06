@@ -1,0 +1,128 @@
+{
+  "config": "B",
+  "config_details": {
+    "name": "Balanced Aggressive",
+    "tp_r": 2.0,
+    "sl_r": 1.0,
+    "confidence": 0.6,
+    "risk_pct": 0.02,
+    "description": "2:1 RR, low confidence, 2% risk"
+  },
+  "cost_stress_tests": {
+    "best_case": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 156.1928709446471,
+      "max_drawdown_pct": 0.6873328129385142,
+      "profit_factor": 3.388762846827109,
+      "sharpe_ratio": 4.133783723387287,
+      "avg_commission": 0.08275291873663385,
+      "avg_slippage": 0.04137645936831692,
+      "rejected_trades": 8452,
+      "viable": "True"
+    },
+    "normal": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 154.57417973879913,
+      "max_drawdown_pct": 0.6976116596989405,
+      "profit_factor": 3.3587572492759934,
+      "sharpe_ratio": 4.111123383879969,
+      "avg_commission": 0.164892019449352,
+      "avg_slippage": 0.082446009724676,
+      "rejected_trades": 8452,
+      "viable": "True"
+    },
+    "realistic": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 152.43182088333046,
+      "max_drawdown_pct": 0.7113151458301117,
+      "profit_factor": 3.319304241951391,
+      "sharpe_ratio": 4.080776122371093,
+      "avg_commission": 0.2461169394392369,
+      "avg_slippage": 0.16407795962615793,
+      "rejected_trades": 8452,
+      "viable": "True"
+    },
+    "worst_case": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 147.15445965830835,
+      "max_drawdown_pct": 0.7470782067186624,
+      "profit_factor": 3.2233501645762295,
+      "sharpe_ratio": 4.004241315406676,
+      "avg_commission": 0.4861932798318061,
+      "avg_slippage": 0.32412885322120405,
+      "rejected_trades": 8452,
+      "viable": "True"
+    },
+    "extreme": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 141.9874146179102,
+      "max_drawdown_pct": 0.791485868519572,
+      "profit_factor": 3.1310431668368333,
+      "sharpe_ratio": 3.926756034157524,
+      "avg_commission": 0.8004068337533542,
+      "avg_slippage": 0.4002034168766771,
+      "rejected_trades": 8452,
+      "viable": "True"
+    }
+  },
+  "position_stress_tests": {
+    "aggressive": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 547.7976673606711,
+      "max_drawdown_pct": 1.390606400353627,
+      "profit_factor": 3.190703437196675,
+      "sharpe_ratio": 4.111123383879967,
+      "avg_commission": 0.5953359867689634,
+      "avg_slippage": 0.2976679933844817,
+      "rejected_trades": 8452,
+      "viable": "True"
+    },
+    "normal": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 154.57417973879913,
+      "max_drawdown_pct": 0.6976116596989405,
+      "profit_factor": 3.3587572492759934,
+      "sharpe_ratio": 4.111123383879969,
+      "avg_commission": 0.164892019449352,
+      "avg_slippage": 0.082446009724676,
+      "rejected_trades": 8452,
+      "viable": "True"
+    },
+    "conservative": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 59.56250636845475,
+      "max_drawdown_pct": 0.34938474484333704,
+      "profit_factor": 3.4282454687719595,
+      "sharpe_ratio": 4.111123383880027,
+      "avg_commission": 0.0634692196457481,
+      "avg_slippage": 0.03173460982287405,
+      "rejected_trades": 8452,
+      "viable": "True"
+    },
+    "very_conservative": {
+      "trades": 8452,
+      "win_rate": 62.00899195456696,
+      "total_return_pct": 20.552999945627555,
+      "max_drawdown_pct": 0.13989306854838998,
+      "profit_factor": 3.463552436854212,
+      "sharpe_ratio": 4.111123383880016,
+      "avg_commission": 0.02194185500731512,
+      "avg_slippage": 0.01097092750365756,
+      "rejected_trades": 8452,
+      "viable": "True"
+    }
+  },
+  "robustness": {
+    "cost_pass_rate": 1.0,
+    "position_pass_rate": 1.0,
+    "overall_robust": true
+  }
+}

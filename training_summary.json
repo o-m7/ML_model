@@ -1,0 +1,29 @@
+{
+  "timestamp": "2025-11-04T04:04:44.478524+00:00",
+  "total_models": 1,
+  "successful": 1,
+  "passed_standards": 0,
+  "needs_improvement": 1,
+  "training_failures": 0,
+  "results": [
+    {
+      "symbol": "EURUSD",
+      "timeframe": "1H",
+      "success": true,
+      "passed": false,
+      "metrics": {},
+      "cv_metrics": {
+        "accuracy": NaN
+      },
+      "failures": [
+        "Invalid classes inferred from unique values of `y`.  Expected: [0 1], got [1 2]"
+      ],
+      "analysis": {
+        "failure_type": [],
+        "severity": "LOW",
+        "recommendations": []
+      },
+      "model_path": null
+    }
+  ]
+}

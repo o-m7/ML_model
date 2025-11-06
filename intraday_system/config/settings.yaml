@@ -1,0 +1,113 @@
+# INTRADAY SYSTEM CONFIGURATION
+# ==============================
+
+# Data
+data:
+  data_root: "feature_store"  # Path to Parquet files
+  train_start: "2019-01-01"
+  train_end: "2025-10-22"
+  oos_months: 6
+  required_columns: ["timestamp", "open", "high", "low", "close", "volume"]
+
+# Symbols
+symbols:
+  - XAUUSD
+  - XAGUSD
+  - EURUSD
+  - GBPUSD
+  - AUDUSD
+  - NZDUSD
+  - USDJPY
+  - USDCAD
+
+# Timeframe Clusters
+timeframes:
+  cluster_a:  # Short-term
+    - "5T"    # 5 minutes
+    - "15T"   # 15 minutes
+    - "30T"   # 30 minutes
+  cluster_b:  # Medium-term
+    - "1H"    # 1 hour
+    - "2H"    # 2 hours
+    - "4H"    # 4 hours
+
+# Strategy Mapping
+strategy_mapping:
+  "5T": "S1"    # 5m Momentum Breakout + Volume
+  "15T": "S2"   # 15m Mean-Reversion to VWAP/EMA
+  "30T": "S3"   # 30m Pullback-to-Trend
+  "1H": "S4"    # 1h Breakout + Retest
+  "2H": "S5"    # 2h Momentum with ADX+ATR Regime
+  "4H": "S6"    # 4h Multi-Timeframe Trend Alignment
+
+# Trading Costs & Execution
+execution:
+  commission_bps: 1.0          # 1 basis point = 0.01%
+  slippage_bps: 0.5            # 0.5 basis point = 0.005%
+  spread_atr_frac: 0.5         # Max spread as fraction of ATR
+  cooldown_bars: 5             # Bars to wait after exit
+  max_bars_in_trade: 50        # Force exit if held too long
+  
+  # Spread assumptions (pips)
+  spreads:
+    XAUUSD: 2.0
+    XAGUSD: 3.0
+    EURUSD: 1.0
+    GBPUSD: 1.5
+    AUDUSD: 1.2
+    NZDUSD: 1.5
+    USDJPY: 1.0
+    USDCAD: 1.2
+
+# Risk Management
+risk:
+  initial_capital: 100000
+  risk_per_trade_pct: 0.01      # 1% risk per trade
+  max_position_pct: 0.10        # Max 10% position size
+  
+# Walk-Forward CV (optimized for speed)
+cv:
+  n_folds: 5  # Reduced from 10 for faster training
+  embargo_bars: 100
+  purge_bars: 50
+  min_train_samples: 1000
+
+# Go-Live Benchmarks
+benchmarks:
+  max_drawdown_pct: 6.0
+  min_profit_factor: 1.60  # Most important metric
+  min_sharpe_per_trade: 0.25
+  min_win_rate: 50.0  # Relaxed - PF is more important than WR
+  min_trades_oos: 200
+  min_trades_per_month: 30
+  
+  # Stress test thresholds
+  stress:
+    cost_multiplier: 1.25
+    min_pf_stressed: 1.30
+    max_dd_stressed: 8.0
+
+# Model Configuration
+model:
+  max_features: 50
+  feature_importance_threshold: 0.001
+  correlation_threshold: 0.95
+  ensemble_method: "stacking"  # "weighted" or "stacking"
+  
+  # Ensemble weights (if weighted)
+  weights:
+    lgb: 0.40
+    xgb: 0.40
+    linear: 0.20
+
+# Paths
+paths:
+  models_dir: "models_intraday"
+  reports_dir: "reports"
+  artifacts_dir: "artifacts"
+
+# Logging
+logging:
+  level: "INFO"
+  format: "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
+

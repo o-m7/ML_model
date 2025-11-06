@@ -1,0 +1,41 @@
+{
+  "symbol": "GBPUSD",
+  "timeframe": "15T",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/GBPUSD_15T_xgb_20251029_151431.pkl",
+  "thresholds": {
+    "long": 0.7999999999999998,
+    "short": 0.7999999999999998,
+    "expr_min": 0.15
+  },
+  "validation_metrics": {
+    "num_trades": 112,
+    "win_rate": 86.60714285714286,
+    "num_wins": 97,
+    "num_losses": 15,
+    "avg_R": 1.1651785714285714,
+    "profit_factor": 9.7,
+    "max_drawdown_pct": 0.019900000000000067,
+    "sharpe": 1.368481738292929,
+    "sortino": Infinity,
+    "calmar": 132.92996102117323,
+    "within_dd_cap": true,
+    "final_equity": 364530.62243213557,
+    "return_pct": 264.5306224321356
+  },
+  "test_metrics": {
+    "num_trades": 449,
+    "win_rate": 73.94209354120267,
+    "num_wins": 332,
+    "num_losses": 117,
+    "avg_R": 0.8485523385300668,
+    "profit_factor": 4.256410256410256,
+    "max_drawdown_pct": 0.04900995010000004,
+    "sharpe": 0.7732554582459383,
+    "sortino": Infinity,
+    "calmar": 862.187060929007,
+    "within_dd_cap": true,
+    "final_equity": 4325574.483299633,
+    "return_pct": 4225.574483299632
+  },
+  "trained_at": "2025-10-29T15:14:31.732714+00:00"
+}

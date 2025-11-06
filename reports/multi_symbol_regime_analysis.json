@@ -1,0 +1,159 @@
+{
+  "timestamp": "2025-11-04T00:22:22.615591",
+  "results": [
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "1H",
+      "status": "SUCCESS",
+      "bars": 40610,
+      "audit_warnings": 3,
+      "audit_passed": true,
+      "regime_stats": {
+        "trend_pct": 21.095789214479193,
+        "range_pct": 16.26200443240581,
+        "neutral_pct": 62.64220635311499,
+        "avg_confidence": 0.33474969057163745
+      },
+      "data_start": "2019-02-22 04:00:00+00:00",
+      "data_end": "2025-10-23 00:00:00+00:00"
+    },
+    {
+      "symbol": "XAGUSD",
+      "timeframe": "1H",
+      "status": "SUCCESS",
+      "bars": 39573,
+      "audit_warnings": 3,
+      "audit_passed": true,
+      "regime_stats": {
+        "trend_pct": 21.173527405048898,
+        "range_pct": 15.103732342758953,
+        "neutral_pct": 63.72274025219215,
+        "avg_confidence": 0.33404740628614854
+      },
+      "data_start": "2019-02-22 06:00:00+00:00",
+      "data_end": "2025-10-23 00:00:00+00:00"
+    },
+    {
+      "symbol": "EURUSD",
+      "timeframe": "1H",
+      "status": "SUCCESS",
+      "bars": 42274,
+      "audit_warnings": 3,
+      "audit_passed": true,
+      "regime_stats": {
+        "trend_pct": 19.37361025689549,
+        "range_pct": 15.366419075554717,
+        "neutral_pct": 65.2599706675498,
+        "avg_confidence": 0.32567461907814566
+      },
+      "data_start": "2019-02-18 12:00:00+00:00",
+      "data_end": "2025-10-23 00:00:00+00:00"
+    },
+    {
+      "symbol": "GBPUSD",
+      "timeframe": "1H",
+      "status": "SUCCESS",
+      "bars": 42175,
+      "audit_warnings": 3,
+      "audit_passed": true,
+      "regime_stats": {
+        "trend_pct": 19.13455838767042,
+        "range_pct": 14.679312388855958,
+        "neutral_pct": 66.18612922347363,
+        "avg_confidence": 0.32200525086390247
+      },
+      "data_start": "2019-02-18 12:00:00+00:00",
+      "data_end": "2025-10-23 00:00:00+00:00"
+    },
+    {
+      "symbol": "AUDUSD",
+      "timeframe": "1H",
+      "status": "ERROR",
+      "error": "Audit failed with 1 errors"
+    },
+    {
+      "symbol": "NZDUSD",
+      "timeframe": "1H",
+      "status": "SUCCESS",
+      "bars": 41328,
+      "audit_warnings": 4,
+      "audit_passed": true,
+      "regime_stats": {
+        "trend_pct": 20.242934572202863,
+        "range_pct": 11.745063879210221,
+        "neutral_pct": 68.01200154858691,
+        "avg_confidence": 0.33652419018570356
+      },
+      "data_start": "2019-02-18 12:00:00+00:00",
+      "data_end": "2025-10-23 00:00:00+00:00"
+    },
+    {
+      "symbol": "USDJPY",
+      "timeframe": "1H",
+      "status": "SUCCESS",
+      "bars": 41701,
+      "audit_warnings": 3,
+      "audit_passed": true,
+      "regime_stats": {
+        "trend_pct": 20.361622023452675,
+        "range_pct": 18.416824536581856,
+        "neutral_pct": 61.22155343996547,
+        "avg_confidence": 0.33039623854891376
+      },
+      "data_start": "2019-02-18 12:00:00+00:00",
+      "data_end": "2025-10-23 00:00:00+00:00"
+    },
+    {
+      "symbol": "USDCAD",
+      "timeframe": "1H",
+      "status": "SUCCESS",
+      "bars": 41725,
+      "audit_warnings": 4,
+      "audit_passed": true,
+      "regime_stats": {
+        "trend_pct": 19.02216896345117,
+        "range_pct": 13.397243858597962,
+        "neutral_pct": 67.58058717795087,
+        "avg_confidence": 0.33100162723508264
+      },
+      "data_start": "2019-02-18 12:00:00+00:00",
+      "data_end": "2025-10-23 00:00:00+00:00"
+    }
+  ],
+  "analysis": {
+    "metals": {
+      "count": 2,
+      "avg_trend": 21.134658309764045,
+      "avg_range": 15.682868387582381,
+      "avg_neutral": 63.18247330265358
+    },
+    "fx": {
+      "count": 5,
+      "avg_trend": 19.626978840734523,
+      "avg_range": 14.720972747760143,
+      "avg_neutral": 65.65204841150533
+    },
+    "all": {
+      "count": 7,
+      "avg_trend": 20.057744403314388,
+      "avg_range": 14.99580007342364,
+      "avg_neutral": 64.94645552326197
+    }
+  },
+  "recommendations": [
+    "\u26a0\ufe0f  XAUUSD: 62.6% Neutral - Current trend strategies will fail. Implement mean-reversion.",
+    "\u26a0\ufe0f  XAUUSD: Only 21.1% Trend - Use wider TP (2.0-2.5R) and tighter SL (0.7-0.8R)",
+    "\u26a0\ufe0f  XAGUSD: 63.7% Neutral - Current trend strategies will fail. Implement mean-reversion.",
+    "\u26a0\ufe0f  XAGUSD: Only 21.2% Trend - Use wider TP (2.0-2.5R) and tighter SL (0.7-0.8R)",
+    "\u26a0\ufe0f  EURUSD: 65.3% Neutral - Current trend strategies will fail. Implement mean-reversion.",
+    "\u26a0\ufe0f  EURUSD: Only 19.4% Trend - Use wider TP (2.0-2.5R) and tighter SL (0.7-0.8R)",
+    "\u26a0\ufe0f  GBPUSD: 66.2% Neutral - Current trend strategies will fail. Implement mean-reversion.",
+    "\u26a0\ufe0f  GBPUSD: Only 19.1% Trend - Use wider TP (2.0-2.5R) and tighter SL (0.7-0.8R)",
+    "\u26a0\ufe0f  NZDUSD: 68.0% Neutral - Current trend strategies will fail. Implement mean-reversion.",
+    "\u26a0\ufe0f  NZDUSD: Only 20.2% Trend - Use wider TP (2.0-2.5R) and tighter SL (0.7-0.8R)",
+    "\u26a0\ufe0f  USDJPY: 61.2% Neutral - Current trend strategies will fail. Implement mean-reversion.",
+    "\u26a0\ufe0f  USDJPY: Only 20.4% Trend - Use wider TP (2.0-2.5R) and tighter SL (0.7-0.8R)",
+    "\u26a0\ufe0f  USDCAD: 67.6% Neutral - Current trend strategies will fail. Implement mean-reversion.",
+    "\u26a0\ufe0f  USDCAD: Only 19.0% Trend - Use wider TP (2.0-2.5R) and tighter SL (0.7-0.8R)"
+  ]
+}

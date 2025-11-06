@@ -1,0 +1,29 @@
+{
+  "symbol": "XAUUSD",
+  "timeframe": "1H",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/XAUUSD_1H_xgb_20251029_054948.pkl",
+  "thresholds": {
+    "long": 0.9100000000000006,
+    "short": 0.9100000000000006,
+    "expr_min": 0.08
+  },
+  "validation_metrics": {
+    "num_trades": 3,
+    "win_rate": 100.0,
+    "avg_R": 1.5,
+    "profit_factor": Infinity,
+    "max_drawdown_pct": 0.0,
+    "sharpe": 0.0,
+    "within_dd_cap": true
+  },
+  "test_metrics": {
+    "num_trades": 26,
+    "win_rate": 69.23076923076923,
+    "avg_R": 0.7307692307692307,
+    "profit_factor": 3.375,
+    "max_drawdown_pct": 0.02970100000000011,
+    "sharpe": 0.6333333333333333,
+    "within_dd_cap": true
+  },
+  "trained_at": "2025-10-29T05:49:48.246464+00:00"
+}

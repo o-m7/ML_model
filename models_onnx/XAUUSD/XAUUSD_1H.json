@@ -1,0 +1,58 @@
+{
+  "symbol": "XAUUSD",
+  "timeframe": "1H",
+  "features": [
+    "atr14",
+    "trange",
+    "vol_percentile",
+    "bb_mid_20",
+    "bb_bbp_20",
+    "bb_bw_20",
+    "kelt_bw_20",
+    "squeeze_on",
+    "ema20_slope",
+    "ema50_slope",
+    "ema200_slope",
+    "trend_strength",
+    "pullback_depth",
+    "pullback_time",
+    "adx14",
+    "aroon_up",
+    "aroon_dn",
+    "macd",
+    "macdh",
+    "stoch_k",
+    "obv",
+    "adosc",
+    "dist_nearest_sr0",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "wick_pressure",
+    "minute_of_day",
+    "dow",
+    "session",
+    "session_pos"
+  ],
+  "params": {
+    "tp": 1.6,
+    "sl": 1.0,
+    "min_conf": 0.35,
+    "min_edge": 0.08,
+    "pos_size": 0.5
+  },
+  "backtest_results": {
+    "total_trades": 266,
+    "long_trades": 187,
+    "short_trades": 79,
+    "win_rate": 43.984962406015036,
+    "profit_factor": 1.1324644806471205,
+    "sharpe_ratio": 0.20362259408940217,
+    "max_drawdown_pct": 5.5620656072066215,
+    "total_return_pct": 5.3238022892962755
+  },
+  "num_features": 30,
+  "input_shape": [
+    null,
+    30
+  ]
+}

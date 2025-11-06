@@ -1,0 +1,58 @@
+{
+  "symbol": "XAGUSD",
+  "timeframe": "5T",
+  "features": [
+    "atr14",
+    "trange",
+    "vol_percentile",
+    "bb_mid_20",
+    "bb_bbp_20",
+    "bb_bw_20",
+    "kelt_bw_20",
+    "squeeze_on",
+    "ema20_slope",
+    "ema50_slope",
+    "ema200_slope",
+    "trend_strength",
+    "pullback_depth",
+    "pullback_time",
+    "adx14",
+    "aroon_up",
+    "aroon_dn",
+    "macd",
+    "macdh",
+    "stoch_k",
+    "obv",
+    "adosc",
+    "dist_nearest_sr0",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "wick_pressure",
+    "minute_of_day",
+    "dow",
+    "session",
+    "session_pos"
+  ],
+  "params": {
+    "tp": 1.4,
+    "sl": 1.0,
+    "min_conf": 0.4,
+    "min_edge": 0.12,
+    "pos_size": 0.2
+  },
+  "backtest_results": {
+    "total_trades": 1835,
+    "long_trades": 987,
+    "short_trades": 848,
+    "win_rate": 66.37602179836513,
+    "profit_factor": 2.12761535495362,
+    "sharpe_ratio": 0.9644981627164065,
+    "max_drawdown_pct": 1.755900267031613,
+    "total_return_pct": 130.56935802393036
+  },
+  "num_features": 30,
+  "input_shape": [
+    null,
+    30
+  ]
+}

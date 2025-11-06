@@ -1,0 +1,41 @@
+{
+  "symbol": "NZDUSD",
+  "timeframe": "15T",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/NZDUSD_15T_xgb_20251029_151539.pkl",
+  "thresholds": {
+    "long": 0.7999999999999998,
+    "short": 0.7499999999999999,
+    "expr_min": 0.05
+  },
+  "validation_metrics": {
+    "num_trades": 59,
+    "win_rate": 76.27118644067797,
+    "num_wins": 45,
+    "num_losses": 14,
+    "avg_R": 0.9067796610169492,
+    "profit_factor": 4.821428571428571,
+    "max_drawdown_pct": 0.09561792499119544,
+    "sharpe": 0.8525964079918675,
+    "sortino": Infinity,
+    "calmar": 7.296899337569977,
+    "within_dd_cap": true,
+    "final_equity": 169771.43735280697,
+    "return_pct": 69.77143735280697
+  },
+  "test_metrics": {
+    "num_trades": 272,
+    "win_rate": 67.64705882352942,
+    "num_wins": 184,
+    "num_losses": 88,
+    "avg_R": 0.6911764705882353,
+    "profit_factor": 3.1363636363636362,
+    "max_drawdown_pct": 0.07277999380410434,
+    "sharpe": 0.5909729366542156,
+    "sortino": Infinity,
+    "calmar": 74.08874723601774,
+    "within_dd_cap": true,
+    "final_equity": 639217.8564791224,
+    "return_pct": 539.2178564791224
+  },
+  "trained_at": "2025-10-29T15:15:39.270021+00:00"
+}

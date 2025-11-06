@@ -1,0 +1,185 @@
+# STRATEGY HYPERPARAMETERS
+# =========================
+
+# S1: 5m Momentum Breakout + Volume Confirmation
+S1:
+  timeframe: "5T"
+  description: "5m Momentum Breakout with Volume Spike"
+  
+  # Label Parameters
+  label:
+    horizon_bars: 10
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.0
+    
+  # Strategy Features
+  breakout:
+    bb_width_lookback: 100
+    bb_width_percentile: 20      # Enter when BB width < 20th percentile (compression)
+    breakout_threshold_atr: 1.0  # Breakout > 1.0 ATR
+    
+  volume:
+    vol_ma_period: 20
+    vol_spike_threshold: 1.5     # Volume > 1.5x MA
+    
+  momentum:
+    ema_fast: 10
+    ema_slow: 20
+    
+  # Model
+  model:
+    confidence_threshold: 0.45
+
+# S2: 15m Mean-Reversion to VWAP/EMA
+S2:
+  timeframe: "15T"
+  description: "15m Mean-Reversion from Extremes"
+  
+  # Label Parameters
+  label:
+    horizon_bars: 8
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.0
+    
+  # Strategy Features
+  reversion:
+    vwap_lookback: 100
+    ema_period: 50
+    deviation_threshold_atr: 1.5   # Trade when price > 1.5 ATR from VWAP/EMA
+    
+  oscillators:
+    rsi_period: 14
+    rsi_oversold: 30
+    rsi_overbought: 70
+    
+  regime:
+    adx_period: 14
+    adx_max: 30                    # Only trade when ADX < 30 (ranging)
+    
+  # Model
+  model:
+    confidence_threshold: 0.50
+
+# S3: 30m Pullback-to-Trend (Trend Continuation)
+S3:
+  timeframe: "30T"
+  description: "30m Pullback to Trend Line"
+  
+  # Label Parameters
+  label:
+    horizon_bars: 6
+    tp_atr_mult: 1.5
+    sl_atr_mult: 1.0
+    
+  # Strategy Features
+  trend:
+    ema_trend: 100
+    ema_pullback: 20
+    trend_slope_lookback: 20
+    
+  pullback:
+    fib_levels: [0.382, 0.50, 0.618]
+    pullback_rsi_min: 50          # For longs, RSI must stay > 50
+    
+  confirmation:
+    macd_fast: 12
+    macd_slow: 26
+    macd_signal: 9
+    
+  # Model
+  model:
+    confidence_threshold: 0.45
+
+# S4: 1h Breakout + Retest
+S4:
+  timeframe: "1H"
+  description: "1h Consolidation Breakout with Retest"
+  
+  # Label Parameters
+  label:
+    horizon_bars: 6
+    tp_atr_mult: 2.0
+    sl_atr_mult: 1.0
+    
+  # Strategy Features
+  consolidation:
+    donchian_period: 20
+    consolidation_atr_mult: 1.5    # Range < 1.5 ATR = consolidation
+    lookback_bars: 50
+    
+  breakout:
+    breakout_atr_mult: 1.2
+    
+  retest:
+    retest_tolerance_atr: 0.5      # Retest within 0.5 ATR of breakout level
+    
+  confirmation:
+    rsi_min: 55
+    macd_required: true
+    
+  # Model
+  model:
+    confidence_threshold: 0.50
+
+# S5: 2h Momentum with ADX+ATR Regime Filter
+S5:
+  timeframe: "2H"
+  description: "2h Trend Following with Regime Filter"
+  
+  # Label Parameters
+  label:
+    horizon_bars: 4
+    tp_atr_mult: 2.0
+    sl_atr_mult: 1.0
+    
+  # Strategy Features
+  regime:
+    adx_period: 14
+    adx_min: 25                    # Strong trend: ADX > 25
+    atr_period: 14
+    atr_percentile_min: 50         # ATR > median (volatile enough)
+    
+  trend:
+    ema_direction: 50
+    ema_fast: 20
+    
+  exit:
+    exit_ema: 20
+    exit_atr_mult: 1.5
+    
+  # Model
+  model:
+    confidence_threshold: 0.48
+
+# S6: 4h Multi-Timeframe Trend Alignment
+S6:
+  timeframe: "4H"
+  description: "4h Trend with Daily Filter"
+  
+  # Label Parameters
+  label:
+    horizon_bars: 3
+    tp_atr_mult: 2.5
+    sl_atr_mult: 1.0
+    
+  # Strategy Features
+  mtf:
+    daily_ema: 100
+    h4_ema_trend: 50
+    h4_ema_entry: 20
+    
+  alignment:
+    require_daily_trend: true
+    slope_lookback: 10
+    
+  filters:
+    rsi_min: 55
+    atr_percentile_min: 40
+    
+  exit:
+    swing_atr_mult: 2.5
+    
+  # Model
+  model:
+    confidence_threshold: 0.52
+

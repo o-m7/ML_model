@@ -1,0 +1,134 @@
+{
+  "results": {
+    "config": "B",
+    "config_details": {
+      "name": "Balanced Aggressive",
+      "tp_r": 2.0,
+      "sl_r": 1.0,
+      "confidence": 0.6,
+      "risk_pct": 0.02,
+      "description": "2:1 RR, low confidence, 2% risk"
+    },
+    "yearly_results": [
+      {
+        "year": "2019",
+        "trades": 4810,
+        "win_rate": 65.67567567567568,
+        "total_return": 49036.99425120157,
+        "total_return_pct": 49.03699425120157,
+        "max_drawdown_pct": 0.21807999503768868,
+        "profit_factor": 3.687735530518628,
+        "sharpe_ratio": 3.857534171994286,
+        "final_equity": 149036.99425120157,
+        "sp500_return": 28.9,
+        "beat_sp500": "True",
+        "outperformance": 20.136994251201575
+      },
+      {
+        "year": "2020",
+        "trades": 4275,
+        "win_rate": 66.66666666666666,
+        "total_return": 115268.23952043013,
+        "total_return_pct": 115.26823952043013,
+        "max_drawdown_pct": 0.27344993438663834,
+        "profit_factor": 4.476282817775453,
+        "sharpe_ratio": 3.7463480419396635,
+        "final_equity": 215268.23952043013,
+        "sp500_return": 16.400000000000002,
+        "beat_sp500": "True",
+        "outperformance": 98.86823952043012
+      },
+      {
+        "year": "2021",
+        "trades": 3147,
+        "win_rate": 62.44041944709247,
+        "total_return": 38906.16125690527,
+        "total_return_pct": 38.90616125690527,
+        "max_drawdown_pct": 0.16594929918023596,
+        "profit_factor": 3.339371941301567,
+        "sharpe_ratio": 2.8382543315554107,
+        "final_equity": 138906.16125690527,
+        "sp500_return": 26.900000000000002,
+        "beat_sp500": "True",
+        "outperformance": 12.006161256905267
+      },
+      {
+        "year": "2022",
+        "trades": 3238,
+        "win_rate": 61.30327362569488,
+        "total_return": 41001.584252753004,
+        "total_return_pct": 41.001584252753005,
+        "max_drawdown_pct": 0.17494653441961844,
+        "profit_factor": 3.155459809033182,
+        "sharpe_ratio": 2.7720183945658183,
+        "final_equity": 141001.584252753,
+        "sp500_return": -18.2,
+        "beat_sp500": "True",
+        "outperformance": 59.201584252753
+      },
+      {
+        "year": "2023",
+        "trades": 4115,
+        "win_rate": 63.62089914945322,
+        "total_return": 45855.4247064642,
+        "total_return_pct": 45.8554247064642,
+        "max_drawdown_pct": 0.12619028753630476,
+        "profit_factor": 3.5750497632668212,
+        "sharpe_ratio": 3.449297906869317,
+        "final_equity": 145855.4247064642,
+        "sp500_return": 24.3,
+        "beat_sp500": "True",
+        "outperformance": 21.555424706464198
+      },
+      {
+        "year": "2024",
+        "trades": 5778,
+        "win_rate": 64.4686742817584,
+        "total_return": 79190.10556683977,
+        "total_return_pct": 79.19010556683978,
+        "max_drawdown_pct": 0.31926729116491465,
+        "profit_factor": 3.6434770700331884,
+        "sharpe_ratio": 4.199840171927447,
+        "final_equity": 179190.10556683977,
+        "sp500_return": 23.5,
+        "beat_sp500": "True",
+        "outperformance": 55.690105566839776
+      },
+      {
+        "year": "2025",
+        "trades": 5096,
+        "win_rate": 60.871271585557295,
+        "total_return": 84790.18310258136,
+        "total_return_pct": 84.79018310258137,
+        "max_drawdown_pct": 0.6976116596988863,
+        "profit_factor": 3.3201768159061587,
+        "sharpe_ratio": 4.054956525909932,
+        "final_equity": 184790.18310258136,
+        "sp500_return": 15.0,
+        "beat_sp500": "True",
+        "outperformance": 69.79018310258137
+      }
+    ],
+    "model_file": "models/XAUUSD/XAUUSD_15T_20251103_135438.pkl"
+  },
+  "analysis": {
+    "viable": "True",
+    "criteria_passed": "6/6",
+    "criteria": {
+      "avg_return_15pct": "True",
+      "min_return_positive": "True",
+      "max_dd_under_6pct": "True",
+      "beat_sp500_majority": true,
+      "sufficient_trades": true,
+      "sharpe_above_1": "True"
+    },
+    "avg_yearly_return": 64.86409895102504,
+    "min_yearly_return": 38.90616125690527,
+    "max_yearly_return": 115.26823952043013,
+    "max_drawdown": 0.6976116596988863,
+    "years_beat_sp500": "7/7",
+    "total_trades": 30459,
+    "avg_win_rate": 63.57812577598552,
+    "avg_sharpe": 3.559749934965983
+  }
+}

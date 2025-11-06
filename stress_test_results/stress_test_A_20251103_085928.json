@@ -1,0 +1,128 @@
+{
+  "config": "A",
+  "config_details": {
+    "name": "Conservative Growth",
+    "tp_r": 1.8,
+    "sl_r": 1.0,
+    "confidence": 0.65,
+    "risk_pct": 0.02,
+    "description": "1.8:1 RR, lower confidence, 2% risk"
+  },
+  "cost_stress_tests": {
+    "best_case": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 106.25938393864635,
+      "max_drawdown_pct": 0.2967335924129393,
+      "profit_factor": 4.825311915463337,
+      "sharpe_ratio": 4.0304614705194615,
+      "avg_commission": 0.07234886374078633,
+      "avg_slippage": 0.03617443187039317,
+      "rejected_trades": 5455,
+      "viable": "True"
+    },
+    "normal": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 105.41736030095213,
+      "max_drawdown_pct": 0.30181855350088876,
+      "profit_factor": 4.7815338414270725,
+      "sharpe_ratio": 4.014753704525731,
+      "avg_commission": 0.14436367754927676,
+      "avg_slippage": 0.07218183877463838,
+      "rejected_trades": 5455,
+      "viable": "True"
+    },
+    "realistic": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 104.30000584087715,
+      "max_drawdown_pct": 0.3085981041381065,
+      "profit_factor": 4.723960647756169,
+      "sharpe_ratio": 3.993680664685008,
+      "avg_commission": 0.2158796768638029,
+      "avg_slippage": 0.14391978457586863,
+      "rejected_trades": 5455,
+      "viable": "True"
+    },
+    "worst_case": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 101.53313288950126,
+      "max_drawdown_pct": 0.32554499351744326,
+      "profit_factor": 4.583883965261007,
+      "sharpe_ratio": 3.9403475673862527,
+      "avg_commission": 0.4284526248868729,
+      "avg_slippage": 0.2856350832579152,
+      "rejected_trades": 5455,
+      "viable": "True"
+    },
+    "extreme": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 98.8037254365462,
+      "max_drawdown_pct": 0.3424890443943055,
+      "profit_factor": 4.449064611144179,
+      "sharpe_ratio": 3.8860778950708883,
+      "avg_commission": 0.7086295374192702,
+      "avg_slippage": 0.3543147687096351,
+      "rejected_trades": 5455,
+      "viable": "True"
+    }
+  },
+  "position_stress_tests": {
+    "aggressive": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 321.8487936896063,
+      "max_drawdown_pct": 0.6028537167155307,
+      "profit_factor": 4.6256640097488555,
+      "sharpe_ratio": 4.014753704525732,
+      "avg_commission": 0.4389211518639787,
+      "avg_slippage": 0.21946057593198934,
+      "rejected_trades": 5455,
+      "viable": "True"
+    },
+    "normal": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 105.41736030095213,
+      "max_drawdown_pct": 0.30181855350088876,
+      "profit_factor": 4.7815338414270725,
+      "sharpe_ratio": 4.014753704525731,
+      "avg_commission": 0.14436367754927676,
+      "avg_slippage": 0.07218183877463838,
+      "rejected_trades": 5455,
+      "viable": "True"
+    },
+    "conservative": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 43.32873264963864,
+      "max_drawdown_pct": 0.15100729947525895,
+      "profit_factor": 4.844961726324934,
+      "sharpe_ratio": 4.014753704525817,
+      "avg_commission": 0.05968812470481875,
+      "avg_slippage": 0.029844062352409374,
+      "rejected_trades": 5455,
+      "viable": "True"
+    },
+    "very_conservative": {
+      "trades": 5455,
+      "win_rate": 71.98900091659029,
+      "total_return_pct": 15.487991953161298,
+      "max_drawdown_pct": 0.060426457914237085,
+      "profit_factor": 4.877475066637895,
+      "sharpe_ratio": 4.014753704525793,
+      "avg_commission": 0.021435208589617866,
+      "avg_slippage": 0.010717604294808933,
+      "rejected_trades": 5455,
+      "viable": "True"
+    }
+  },
+  "robustness": {
+    "cost_pass_rate": 1.0,
+    "position_pass_rate": 1.0,
+    "overall_robust": true
+  }
+}

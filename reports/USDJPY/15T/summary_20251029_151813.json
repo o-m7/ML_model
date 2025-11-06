@@ -1,0 +1,41 @@
+{
+  "symbol": "USDJPY",
+  "timeframe": "15T",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/USDJPY_15T_xgb_20251029_151813.pkl",
+  "thresholds": {
+    "long": 0.7999999999999998,
+    "short": 0.7999999999999998,
+    "expr_min": 0.05
+  },
+  "validation_metrics": {
+    "num_trades": 56,
+    "win_rate": 82.14285714285714,
+    "num_wins": 46,
+    "num_losses": 10,
+    "avg_R": 1.0535714285714286,
+    "profit_factor": 6.9,
+    "max_drawdown_pct": 0.0347450993515001,
+    "sharpe": 1.10035567372357,
+    "sortino": Infinity,
+    "calmar": 22.8482739757241,
+    "within_dd_cap": true,
+    "final_equity": 179386.5549296828,
+    "return_pct": 79.3865549296828
+  },
+  "test_metrics": {
+    "num_trades": 335,
+    "win_rate": 73.13432835820896,
+    "num_wins": 245,
+    "num_losses": 90,
+    "avg_R": 0.8283582089552238,
+    "profit_factor": 4.083333333333333,
+    "max_drawdown_pct": 0.07277999380410438,
+    "sharpe": 0.7475128829686359,
+    "sortino": Infinity,
+    "calmar": 199.72946905983122,
+    "within_dd_cap": true,
+    "final_equity": 1553630.9520671575,
+    "return_pct": 1453.6309520671575
+  },
+  "trained_at": "2025-10-29T15:18:13.310883+00:00"
+}

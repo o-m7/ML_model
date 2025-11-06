@@ -1,0 +1,195 @@
+
+================================================================================
+PRODUCTION TRAINING - FINAL
+Conservative Risk | Tight Circuit Breaker | Balanced Signals
+================================================================================
+
+
+================================================================================
+PRODUCTION: XAUUSD 15T
+================================================================================
+
+Parameters: TP=1.6, Conf=0.35, Pos=60%
+
+[1/5] Loading...
+Loaded 155,893 bars
+[2/5] Features & Labels...
+  Labels: Flat=25.0%, Up=37.1%, Down=38.0%
+Using 30 features
+[3/5] Training...
+[4/5] Backtesting...
+[5/5] Checking benchmarks...
+
+================================================================================
+Trades: 1098 (L:955, S:143)
+Win Rate: 48.2%
+Profit Factor: 1.21
+Sharpe: 0.35
+Max DD: 7.1%
+Return: 45.9%
+
+❌ FAILED: PF 1.21 < 1.3
+================================================================================
+
+
+================================================================================
+PRODUCTION: XAUUSD 1H
+================================================================================
+
+Parameters: TP=1.8, Conf=0.38, Pos=70%
+
+[1/5] Loading...
+Loaded 40,586 bars
+[2/5] Features & Labels...
+  Labels: Flat=29.1%, Up=36.9%, Down=34.0%
+Using 30 features
+[3/5] Training...
+[4/5] Backtesting...
+[5/5] Checking benchmarks...
+
+================================================================================
+Trades: 118 (L:91, S:27)
+Win Rate: 37.3%
+Profit Factor: 0.97
+Sharpe: -0.02
+Max DD: 4.1%
+Return: -0.7%
+
+❌ FAILED: PF 0.97 < 1.3, Sharpe -0.02 < 0.15, WR 37.3% < 47.0%
+================================================================================
+
+
+================================================================================
+PRODUCTION: XAGUSD 15T
+================================================================================
+
+Parameters: TP=1.5, Conf=0.38, Pos=30%
+
+[1/5] Loading...
+Loaded 151,498 bars
+[2/5] Features & Labels...
+  Labels: Flat=22.1%, Up=37.6%, Down=40.3%
+Using 30 features
+[3/5] Training...
+[4/5] Backtesting...
+[5/5] Checking benchmarks...
+
+================================================================================
+Trades: 574 (L:321, S:253)
+Win Rate: 57.1%
+Profit Factor: 1.76
+Sharpe: 0.70
+Max DD: 1.8%
+Return: 36.2%
+
+✅ PRODUCTION READY
+================================================================================
+
+
+================================================================================
+PRODUCTION: XAGUSD 1H
+================================================================================
+
+Parameters: TP=1.6, Conf=0.38, Pos=30%
+
+[1/5] Loading...
+Loaded 39,549 bars
+[2/5] Features & Labels...
+  Labels: Flat=24.4%, Up=37.0%, Down=38.6%
+Using 30 features
+[3/5] Training...
+[4/5] Backtesting...
+[5/5] Checking benchmarks...
+
+================================================================================
+Trades: 441 (L:19, S:422)
+Win Rate: 39.2%
+Profit Factor: 0.97
+Sharpe: -0.06
+Max DD: 3.2%
+Return: -1.2%
+
+❌ FAILED: PF 0.97 < 1.3, Sharpe -0.06 < 0.15, WR 39.2% < 47.0%
+================================================================================
+
+
+================================================================================
+PRODUCTION: EURUSD 15T
+================================================================================
+
+Parameters: TP=1.3, Conf=0.35, Pos=70%
+
+[1/5] Loading...
+Loaded 165,995 bars
+[2/5] Features & Labels...
+  Labels: Flat=16.3%, Up=40.0%, Down=43.7%
+Using 30 features
+[3/5] Training...
+[4/5] Backtesting...
+[5/5] Checking benchmarks...
+
+================================================================================
+Trades: 698 (L:598, S:100)
+Win Rate: 50.3%
+Profit Factor: 1.04
+Sharpe: 0.06
+Max DD: 7.1%
+Return: 3.3%
+
+❌ FAILED: PF 1.04 < 1.3, Sharpe 0.06 < 0.15
+================================================================================
+
+
+================================================================================
+PRODUCTION: EURUSD 1H
+================================================================================
+
+Parameters: TP=1.4, Conf=0.38, Pos=70%
+
+[1/5] Loading...
+Loaded 42,250 bars
+[2/5] Features & Labels...
+  Labels: Flat=18.8%, Up=39.8%, Down=41.4%
+Using 30 features
+[3/5] Training...
+[4/5] Backtesting...
+[5/5] Checking benchmarks...
+
+================================================================================
+Trades: 108 (L:106, S:2)
+Win Rate: 38.0%
+Profit Factor: 0.77
+Sharpe: -0.28
+Max DD: 7.0%
+Return: -5.5%
+
+❌ FAILED: PF 0.77 < 1.3, Sharpe -0.28 < 0.15, WR 38.0% < 47.0%
+================================================================================
+
+
+================================================================================
+PRODUCTION: GBPUSD 15T
+================================================================================
+
+Parameters: TP=1.6, Conf=0.35, Pos=50%
+
+[1/5] Loading...
+Loaded 165,623 bars
+[2/5] Features & Labels...
+  Labels: Flat=27.4%, Up=34.3%, Down=38.3%
+Traceback (most recent call last):
+  File "/Users/omar/Desktop/ML_Trading/production_final_system.py", line 643, in <module>
+    exit(main())
+         ~~~~^^
+  File "/Users/omar/Desktop/ML_Trading/production_final_system.py", line 629, in main
+    results = train_all_production()
+  File "/Users/omar/Desktop/ML_Trading/production_final_system.py", line 596, in train_all_production
+    result = train_production(symbol, timeframe)
+  File "/Users/omar/Desktop/ML_Trading/production_final_system.py", line 490, in train_production
+    features = select_features(df)
+  File "/Users/omar/Desktop/ML_Trading/production_final_system.py", line 223, in select_features
+    corr_matrix = df[candidates].corr().abs()
+                  ~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/omar/Desktop/ML_Trading/.venv/lib/python3.14/site-packages/pandas/core/frame.py", line 11079, in corr
+    correl = libalgos.nancorr(mat, minp=min_periods)
+KeyboardInterrupt

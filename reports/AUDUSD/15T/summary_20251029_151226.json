@@ -1,0 +1,41 @@
+{
+  "symbol": "AUDUSD",
+  "timeframe": "15T",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/AUDUSD_15T_xgb_20251029_151226.pkl",
+  "thresholds": {
+    "long": 0.7999999999999998,
+    "short": 0.6499999999999999,
+    "expr_min": 0.12
+  },
+  "validation_metrics": {
+    "num_trades": 128,
+    "win_rate": 64.84375,
+    "num_wins": 83,
+    "num_losses": 45,
+    "avg_R": 0.62109375,
+    "profit_factor": 2.7666666666666666,
+    "max_drawdown_pct": 0.16548623854991243,
+    "sharpe": 0.5203335352942449,
+    "sortino": Infinity,
+    "calmar": 7.1854814620472025,
+    "within_dd_cap": false,
+    "final_equity": 218909.8299324317,
+    "return_pct": 118.90982993243169
+  },
+  "test_metrics": {
+    "num_trades": 740,
+    "win_rate": 46.48648648648649,
+    "num_wins": 344,
+    "num_losses": 396,
+    "avg_R": 0.16216216216216217,
+    "profit_factor": 1.303030303030303,
+    "max_drawdown_pct": 0.3550088901383681,
+    "sharpe": 0.13005121775247103,
+    "sortino": Infinity,
+    "calmar": 6.0061708864584835,
+    "within_dd_cap": false,
+    "final_equity": 313224.4060383005,
+    "return_pct": 213.2244060383005
+  },
+  "trained_at": "2025-10-29T15:12:26.398743+00:00"
+}

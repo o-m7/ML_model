@@ -1,0 +1,41 @@
+{
+  "symbol": "EURUSD",
+  "timeframe": "15T",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/EURUSD_15T_xgb_20251029_151325.pkl",
+  "thresholds": {
+    "long": 0.7999999999999998,
+    "short": 0.7999999999999998,
+    "expr_min": 0.15
+  },
+  "validation_metrics": {
+    "num_trades": 69,
+    "win_rate": 81.15942028985508,
+    "num_wins": 56,
+    "num_losses": 13,
+    "avg_R": 1.0289855072463767,
+    "profit_factor": 6.461538461538462,
+    "max_drawdown_pct": 0.019900000000000098,
+    "sharpe": 1.0525740296587633,
+    "sortino": Infinity,
+    "calmar": 51.25733933845933,
+    "within_dd_cap": true,
+    "final_equity": 202002.10528353456,
+    "return_pct": 102.00210528353458
+  },
+  "test_metrics": {
+    "num_trades": 329,
+    "win_rate": 75.98784194528876,
+    "num_wins": 250,
+    "num_losses": 79,
+    "avg_R": 0.8996960486322189,
+    "profit_factor": 4.746835443037975,
+    "max_drawdown_pct": 0.06793465209301014,
+    "sharpe": 0.842496591286347,
+    "sortino": Infinity,
+    "calmar": 260.44901881220244,
+    "within_dd_cap": true,
+    "final_equity": 1869351.3480972825,
+    "return_pct": 1769.3513480972824
+  },
+  "trained_at": "2025-10-29T15:13:25.736614+00:00"
+}

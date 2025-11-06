@@ -1,0 +1,47 @@
+{
+  "symbol": "XAUUSD",
+  "timeframe": "1H",
+  "timestamp": "2025-11-04T05:20:11.473004",
+  "live_ready": false,
+  "failures": [
+    "DD 22.1% > 6.0%",
+    "PF 1.07 < 1.6",
+    "Sharpe 0.210 < 0.25",
+    "Only 50% months profitable (need 70%)",
+    "WR 42.2% < 52.0% AND Expectancy -0.127R < 0.08R",
+    "Total trades 185 < 200"
+  ],
+  "root_causes": [
+    "Consecutive losses: 9 in a row suggests no regime filtering or poor exit strategy",
+    "High SL hit rate (68%): stops too tight or entry timing poor",
+    "Single large loss (2.1%): position sizing issue or no circuit breaker",
+    "Low win rate (42%): strategy likely trading against regime or entry signals are noisy",
+    "Poor R:R ratio (1.07): TP too close or SL too wide",
+    "Low Sharpe: inconsistent returns or high volatility",
+    "Inconsistent performance across months",
+    "Poor trade quality: low win rate AND low expectancy",
+    "Insufficient trades: filters too strict or low signal quality"
+  ],
+  "ranked_fixes": [
+    "Priority 1: Tighten regime filter (raise ADX threshold from 25\u219228, ATR to 55th pct)",
+    "Priority 1: Increase cooldown from 3\u21926 bars to avoid revenge trading",
+    "Priority 1: Add circuit breaker: halt if rolling DD > 4%",
+    "Priority 2: Raise entry thresholds (+15-20% on breakout/volume filters)",
+    "Priority 2: Add regime gating if not present",
+    "Priority 3: Increase decision threshold (0.55\u21920.62) for higher confidence trades",
+    "Priority 3: Add session filter to avoid low-liquidity hours",
+    "Priority 3: Loosen filters slightly (reduce breakout threshold by 5-10%)",
+    "Priority 3: Check if cooldown is too aggressive",
+    "Metals-specific: Exclude NFP/FOMC/CPI windows (\u00b130 min)"
+  ],
+  "metrics": {
+    "profit_factor": 1.07,
+    "max_drawdown_pct": 22.1,
+    "sharpe_ratio": 0.21,
+    "win_rate": 42.2,
+    "total_trades": 185,
+    "trades_per_month": 30.833333333333332,
+    "expectancy_r": -0.12680503144654082
+  },
+  "stress_results": null
+}

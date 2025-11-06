@@ -1,0 +1,41 @@
+{
+  "symbol": "USDCAD",
+  "timeframe": "15T",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/USDCAD_15T_xgb_20251029_151704.pkl",
+  "thresholds": {
+    "long": 0.7999999999999998,
+    "short": 0.7499999999999999,
+    "expr_min": 0.05
+  },
+  "validation_metrics": {
+    "num_trades": 98,
+    "win_rate": 66.3265306122449,
+    "num_wins": 65,
+    "num_losses": 33,
+    "avg_R": 0.6581632653061225,
+    "profit_factor": 2.9545454545454546,
+    "max_drawdown_pct": 0.03940399000000006,
+    "sharpe": 0.5570652370429143,
+    "sortino": Infinity,
+    "calmar": 22.563618727509365,
+    "within_dd_cap": true,
+    "final_equity": 188909.66067025933,
+    "return_pct": 88.90966067025931
+  },
+  "test_metrics": {
+    "num_trades": 547,
+    "win_rate": 62.705667276051194,
+    "num_wins": 343,
+    "num_losses": 204,
+    "avg_R": 0.5676416819012797,
+    "profit_factor": 2.5220588235294117,
+    "max_drawdown_pct": 0.2720631162041672,
+    "sharpe": 0.46952579002786016,
+    "sortino": Infinity,
+    "calmar": 74.44443387684474,
+    "within_dd_cap": false,
+    "final_equity": 2125358.466458945,
+    "return_pct": 2025.358466458945
+  },
+  "trained_at": "2025-10-29T15:17:04.321357+00:00"
+}

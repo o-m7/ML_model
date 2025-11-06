@@ -1,0 +1,41 @@
+{
+  "symbol": "XAUUSD",
+  "timeframe": "1H",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/XAUUSD_1H_xgb_20251029_144909.pkl",
+  "thresholds": {
+    "long": 0.7499999999999999,
+    "short": 0.7999999999999998,
+    "expr_min": 0.05
+  },
+  "validation_metrics": {
+    "num_trades": 52,
+    "win_rate": 88.46153846153845,
+    "num_wins": 46,
+    "num_losses": 6,
+    "avg_R": 1.2115384615384615,
+    "profit_factor": 11.5,
+    "max_drawdown_pct": 0.019899999999999925,
+    "sharpe": 1.5168617488806915,
+    "sortino": Infinity,
+    "calmar": 43.590480009067484,
+    "within_dd_cap": true,
+    "final_equity": 186745.05521804397,
+    "return_pct": 86.74505521804396
+  },
+  "test_metrics": {
+    "num_trades": 298,
+    "win_rate": 59.395973154362416,
+    "num_wins": 177,
+    "num_losses": 121,
+    "avg_R": 0.4848993288590604,
+    "profit_factor": 2.1942148760330578,
+    "max_drawdown_pct": 0.14058435474467293,
+    "sharpe": 0.39495582198694096,
+    "sortino": Infinity,
+    "calmar": 22.291145643094847,
+    "within_dd_cap": true,
+    "final_equity": 413378.63267540163,
+    "return_pct": 313.37863267540166
+  },
+  "trained_at": "2025-10-29T14:49:09.539849+00:00"
+}

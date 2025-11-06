@@ -1,0 +1,58 @@
+{
+  "symbol": "EURUSD",
+  "timeframe": "30T",
+  "features": [
+    "atr14",
+    "trange",
+    "vol_percentile",
+    "bb_mid_20",
+    "bb_bbp_20",
+    "bb_bw_20",
+    "squeeze_on",
+    "ema20_slope",
+    "ema50_slope",
+    "ema200_slope",
+    "trend_strength",
+    "pullback_depth",
+    "pullback_time",
+    "adx14",
+    "aroon_up",
+    "aroon_dn",
+    "macd",
+    "macdh",
+    "stoch_k",
+    "obv",
+    "adosc",
+    "dist_nearest_sr0",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "wick_pressure",
+    "minute_of_day",
+    "dow",
+    "session",
+    "session_pos",
+    "sess_asia"
+  ],
+  "params": {
+    "tp": 1.3,
+    "sl": 1.0,
+    "min_conf": 0.35,
+    "min_edge": 0.08,
+    "pos_size": 0.7
+  },
+  "backtest_results": {
+    "total_trades": 216,
+    "long_trades": 82,
+    "short_trades": 134,
+    "win_rate": 61.111111111111114,
+    "profit_factor": 1.7160446339787123,
+    "sharpe_ratio": 0.553487822676532,
+    "max_drawdown_pct": 2.596766859933218,
+    "total_return_pct": 20.6546156228127
+  },
+  "num_features": 30,
+  "input_shape": [
+    null,
+    30
+  ]
+}

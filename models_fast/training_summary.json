@@ -1,0 +1,136 @@
+{
+  "timestamp": "2025-11-04T21:21:19.137003+00:00",
+  "total": 8,
+  "passed": 1,
+  "total_trades": 1036,
+  "results": [
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "15T",
+      "passed": true,
+      "results": {
+        "total_trades": 171,
+        "long_trades": 67,
+        "short_trades": 104,
+        "win_rate": 68.42105263157895,
+        "profit_factor": 2.6481796359180425,
+        "sharpe_ratio": 0.578693456434031,
+        "max_drawdown_pct": 1.6408232450593436,
+        "total_return_pct": 49.87357421237925
+      },
+      "num_trades": 171
+    },
+    {
+      "symbol": "XAUUSD",
+      "timeframe": "1H",
+      "passed": false,
+      "results": {
+        "total_trades": 50,
+        "long_trades": 16,
+        "short_trades": 34,
+        "win_rate": 50.0,
+        "profit_factor": 1.468112914726216,
+        "sharpe_ratio": 0.258008436198838,
+        "max_drawdown_pct": 4.178625503584667,
+        "total_return_pct": 9.360986143121664
+      },
+      "num_trades": 50
+    },
+    {
+      "symbol": "XAGUSD",
+      "timeframe": "15T",
+      "passed": false,
+      "results": {
+        "total_trades": 364,
+        "long_trades": 82,
+        "short_trades": 282,
+        "win_rate": 59.34065934065934,
+        "profit_factor": 1.7912689150842869,
+        "sharpe_ratio": 0.5817248931073244,
+        "max_drawdown_pct": 10.867591114393713,
+        "total_return_pct": 152.66138107559038
+      },
+      "num_trades": 364
+    },
+    {
+      "symbol": "XAGUSD",
+      "timeframe": "1H",
+      "passed": false,
+      "results": {
+        "total_trades": 52,
+        "long_trades": 0,
+        "short_trades": 52,
+        "win_rate": 44.230769230769226,
+        "profit_factor": 1.108837591815603,
+        "sharpe_ratio": 0.08799576549071496,
+        "max_drawdown_pct": 12.683827122182295,
+        "total_return_pct": 3.528753017856512
+      },
+      "num_trades": 52
+    },
+    {
+      "symbol": "EURUSD",
+      "timeframe": "15T",
+      "passed": false,
+      "results": {
+        "total_trades": 202,
+        "long_trades": 150,
+        "short_trades": 52,
+        "win_rate": 49.00990099009901,
+        "profit_factor": 1.1038418580971667,
+        "sharpe_ratio": 0.07041783362458162,
+        "max_drawdown_pct": 3.8205671384030686,
+        "total_return_pct": 2.882892635034029
+      },
+      "num_trades": 202
+    },
+    {
+      "symbol": "EURUSD",
+      "timeframe": "1H",
+      "passed": false,
+      "results": {
+        "total_trades": 126,
+        "long_trades": 117,
+        "short_trades": 9,
+        "win_rate": 42.06349206349206,
+        "profit_factor": 1.018690888746945,
+        "sharpe_ratio": 0.02806686380851596,
+        "max_drawdown_pct": 9.569147536763406,
+        "total_return_pct": 0.8077361739895039
+      },
+      "num_trades": 126
+    },
+    {
+      "symbol": "GBPUSD",
+      "timeframe": "15T",
+      "passed": false,
+      "results": {
+        "total_trades": 57,
+        "long_trades": 35,
+        "short_trades": 22,
+        "win_rate": 59.64912280701754,
+        "profit_factor": 1.9183715228463554,
+        "sharpe_ratio": 0.23076433825315312,
+        "max_drawdown_pct": 1.3072708649249216,
+        "total_return_pct": 5.165289366736414
+      },
+      "num_trades": 57
+    },
+    {
+      "symbol": "GBPUSD",
+      "timeframe": "1H",
+      "passed": false,
+      "results": {
+        "total_trades": 14,
+        "long_trades": 10,
+        "short_trades": 4,
+        "win_rate": 78.57142857142857,
+        "profit_factor": 4.23103431645613,
+        "sharpe_ratio": 0.46268748805109766,
+        "max_drawdown_pct": 0.5268425680007058,
+        "total_return_pct": 4.776175008998607
+      },
+      "num_trades": 14
+    }
+  ]
+}

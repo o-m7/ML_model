@@ -1,0 +1,41 @@
+{
+  "symbol": "XAGUSD",
+  "timeframe": "15T",
+  "model_path": "/Users/omar/Desktop/ML_Trading/models/XAGUSD_15T_xgb_20251029_152011.pkl",
+  "thresholds": {
+    "long": 0.7999999999999998,
+    "short": 0.7499999999999999,
+    "expr_min": 0.12
+  },
+  "validation_metrics": {
+    "num_trades": 66,
+    "win_rate": 87.87878787878788,
+    "num_wins": 58,
+    "num_losses": 8,
+    "avg_R": 1.196969696969697,
+    "profit_factor": 10.875,
+    "max_drawdown_pct": 0.019900000000000057,
+    "sharpe": 1.4669931715987095,
+    "sortino": Infinity,
+    "calmar": 59.714871054492555,
+    "within_dd_cap": true,
+    "final_equity": 218832.5933984405,
+    "return_pct": 118.83259339844052
+  },
+  "test_metrics": {
+    "num_trades": 391,
+    "win_rate": 76.21483375959079,
+    "num_wins": 298,
+    "num_losses": 93,
+    "avg_R": 0.9053708439897699,
+    "profit_factor": 4.806451612903226,
+    "max_drawdown_pct": 0.08648275251635898,
+    "sharpe": 0.8505770235568407,
+    "sortino": Infinity,
+    "calmar": 372.1656140895406,
+    "within_dd_cap": true,
+    "final_equity": 3318590.66984045,
+    "return_pct": 3218.59066984045
+  },
+  "trained_at": "2025-10-29T15:20:11.243240+00:00"
+}

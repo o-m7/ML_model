@@ -1,0 +1,58 @@
+{
+  "symbol": "NZDUSD",
+  "timeframe": "5T",
+  "features": [
+    "atr14",
+    "trange",
+    "vol_percentile",
+    "bb_mid_20",
+    "bb_bbp_20",
+    "bb_bw_20",
+    "squeeze_on",
+    "ema20_slope",
+    "ema50_slope",
+    "ema200_slope",
+    "trend_strength",
+    "pullback_depth",
+    "pullback_time",
+    "adx14",
+    "aroon_up",
+    "aroon_dn",
+    "rsi14",
+    "macd",
+    "macds",
+    "macdh",
+    "stoch_k",
+    "obv",
+    "adosc",
+    "dist_nearest_sr0",
+    "upper_wick_ratio",
+    "lower_wick_ratio",
+    "minute_of_day",
+    "dow",
+    "session",
+    "session_pos"
+  ],
+  "params": {
+    "tp": 1.4,
+    "sl": 1.0,
+    "min_conf": 0.4,
+    "min_edge": 0.12,
+    "pos_size": 0.5
+  },
+  "backtest_results": {
+    "total_trades": 677,
+    "long_trades": 222,
+    "short_trades": 455,
+    "win_rate": 61.44756277695716,
+    "profit_factor": 1.7564603451019942,
+    "sharpe_ratio": 0.4233636279378686,
+    "max_drawdown_pct": 2.1171739723517007,
+    "total_return_pct": 62.20499987196777
+  },
+  "num_features": 30,
+  "input_shape": [
+    null,
+    30
+  ]
+}
