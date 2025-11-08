@@ -9,11 +9,11 @@ from typing import Dict, List, Tuple
 class BenchmarkValidator:
     """Validates model performance against production benchmarks"""
     
-    # Production benchmarks
-    MIN_PROFIT_FACTOR = 1.05
-    MAX_DRAWDOWN_PCT = 7.5
-    MIN_SHARPE = 0.05
-    MIN_WIN_RATE = 39.0
+    # Production benchmarks - STRICT REQUIREMENTS
+    MIN_PROFIT_FACTOR = 1.6   # ⚠️ STRICT: Only elite models (was 1.05)
+    MAX_DRAWDOWN_PCT = 6.0    # ⚠️ STRICT: Tight risk control (was 7.5%)
+    MIN_SHARPE = 0.05         # Keep same
+    MIN_WIN_RATE = 45.0       # ⚠️ STRICT: High win rate required (was 39%)
     
     MIN_TRADES_BY_TF = {
         "5T": 200,
