@@ -2,8 +2,7 @@
 """
 SENTIMENT DATA COLLECTOR
 =========================
-Collects sentiment data and stores in Supabase for later use.
-Run hourly via cron or GitHub Actions.
+Collects sentiment data hourly and stores in Supabase.
 """
 
 import os
@@ -18,58 +17,61 @@ from sentiment_analyzer import SentimentAnalyzer
 
 load_dotenv()
 
+# Configuration
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-if not all([SUPABASE_URL, SUPABASE_KEY]):
-    print("❌ Missing required environment variables!")
-    sys.exit(1)
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Symbols to track
-SYMBOLS = ['EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD', 'XAUUSD', 'XAGUSD']
+SYMBOLS = ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD']
 
 
-def collect_and_store_sentiment():
-    """Collect sentiment for all symbols and store in Supabase."""
+def store_sentiment(sentiment_data: dict):
+    """Store sentiment data in Supabase."""
+    try:
+        supabase.table('sentiment_data').insert({
+            'symbol': sentiment_data['symbol'],
+            'timestamp': sentiment_data['timestamp'],
+            'news_sentiment': sentiment_data['news_sentiment'],
+            'reddit_sentiment': sentiment_data['reddit_sentiment'],
+            'aggregate_sentiment': sentiment_data['aggregate_sentiment'],
+        }).execute()
+        
+        print(f"  ✅ Stored sentiment for {sentiment_data['symbol']}")
+    
+    except Exception as e:
+        print(f"  ❌ Error storing {sentiment_data['symbol']}: {e}")
+
+
+def main():
+    """Main execution."""
     print("\n" + "="*80)
     print(f"SENTIMENT DATA COLLECTION - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*80)
+    print("="*80 + "\n")
     
     analyzer = SentimentAnalyzer()
     
-    stored_count = 0
-    failed_count = 0
-    
+    collected = 0
     for symbol in SYMBOLS:
         try:
-            # Get sentiment
-            result = analyzer.get_aggregate_sentiment(symbol, hours_back=24)
+            print(f"\n📊 Collecting sentiment for {symbol}...")
             
-            # Store in Supabase
-            supabase.table('sentiment_data').insert({
-                'symbol': symbol,
-                'timestamp': result['timestamp'],
-                'news_sentiment': result['news_sentiment'],
-                'reddit_sentiment': result['reddit_sentiment'],
-                'twitter_sentiment': result['twitter_sentiment'],
-                'aggregate_sentiment': result['aggregate_sentiment']
-            }).execute()
+            result = analyzer.get_aggregate_sentiment(symbol)
             
-            stored_count += 1
-            print(f"  ✅ {symbol}: {result['aggregate_sentiment']:+.3f}")
-            
+            if result['aggregate_sentiment'] != 0.0:
+                store_sentiment(result)
+                collected += 1
+            else:
+                print(f"  ⏭️  Skipping {symbol} - no data")
+        
         except Exception as e:
-            failed_count += 1
-            print(f"  ❌ {symbol}: {e}")
+            print(f"  ❌ Error with {symbol}: {e}")
     
     print("\n" + "="*80)
-    print(f"✅ Stored: {stored_count}/{len(SYMBOLS)}")
-    print(f"❌ Failed: {failed_count}/{len(SYMBOLS)}")
+    print(f"✅ Collected sentiment for {collected}/{len(SYMBOLS)} symbols")
     print("="*80 + "\n")
 
 
 if __name__ == "__main__":
-    collect_and_store_sentiment()
-
+    main()

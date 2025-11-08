@@ -73,6 +73,10 @@ TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
 # Cache for ensemble predictors (one per symbol)
 ENSEMBLE_CACHE = {}
 
+# Sentiment filtering thresholds
+SENTIMENT_LONG_THRESHOLD = 0.2   # Only take LONG if sentiment > 0.2
+SENTIMENT_SHORT_THRESHOLD = -0.2  # Only take SHORT if sentiment < -0.2
+
 
 def get_ensemble(symbol: str) -> Optional[EnsemblePredictor]:
     """Get or create ensemble predictor for a symbol."""
@@ -83,6 +87,29 @@ def get_ensemble(symbol: str) -> Optional[EnsemblePredictor]:
             print(f"  ⚠️  Cannot load ensemble for {symbol}: {e}")
             return None
     return ENSEMBLE_CACHE[symbol]
+
+
+def get_recent_sentiment(symbol: str) -> float:
+    """Get most recent sentiment for symbol from Supabase."""
+    try:
+        # Get sentiment from last 6 hours
+        response = supabase.table('sentiment_data').select(
+            'aggregate_sentiment'
+        ).eq(
+            'symbol', symbol
+        ).order(
+            'timestamp', desc=True
+        ).limit(1).execute()
+        
+        if response.data and len(response.data) > 0:
+            sentiment = response.data[0]['aggregate_sentiment']
+            return float(sentiment)
+        else:
+            return 0.0  # Neutral if no data
+    
+    except Exception as e:
+        print(f"  ⚠️  Error fetching sentiment for {symbol}: {e}")
+        return 0.0  # Neutral on error
 
 
 def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
@@ -264,6 +291,17 @@ def process_symbol(symbol, timeframe):
             # Fallback to simple signal if ensemble unavailable
             signal_type, confidence, edge = generate_simple_signal(df)
             print(f"  ⚠️  {symbol} {timeframe}: Using fallback signal → {signal_type.upper()}")
+        
+        # Check sentiment filter
+        sentiment = get_recent_sentiment(symbol)
+        if (signal_type == 'long' and sentiment < SENTIMENT_LONG_THRESHOLD):
+            print(f"  🚫 {symbol} {timeframe}: LONG filtered by sentiment ({sentiment:.3f} < {SENTIMENT_LONG_THRESHOLD})")
+            return
+        elif (signal_type == 'short' and sentiment > SENTIMENT_SHORT_THRESHOLD):
+            print(f"  🚫 {symbol} {timeframe}: SHORT filtered by sentiment ({sentiment:.3f} > {SENTIMENT_SHORT_THRESHOLD})")
+            return
+        elif sentiment != 0.0:
+            print(f"  ✅ {symbol} {timeframe}: Sentiment OK ({sentiment:.3f})")
         
         # Calculate ATR for TP/SL
         atr = float(df['atr'].iloc[-1])

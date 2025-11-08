@@ -1,0 +1,43 @@
+name: Collect Sentiment Data
+
+on:
+  schedule:
+    # Run every hour
+    - cron: '0 * * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  collect-sentiment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install requests pandas python-dotenv supabase newsapi-python praw vaderSentiment
+      
+      - name: Collect sentiment data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
+          REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
+        run: |
+          echo "================================================================================================="
+          echo "SENTIMENT DATA COLLECTION"
+          echo "================================================================================================="
+          python3 sentiment_data_collector.py
+          echo "================================================================================================="
+          echo "COLLECTION COMPLETE"
+          echo "================================================================================================="
+
