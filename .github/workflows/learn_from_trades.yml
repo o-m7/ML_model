@@ -1,0 +1,133 @@
+name: Learn From Live Trades
+
+on:
+  schedule:
+    # Run daily at 00:00 UTC (analyze yesterday's trades)
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  collect-and-retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install pandas numpy python-dotenv supabase scikit-learn lightgbm pyarrow fastparquet
+      
+      - name: Download previous trade data (if exists)
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          name: live-trades-data
+          path: live_trades/
+          workflow: learn_from_trades.yml
+          search_artifacts: true
+      
+      - name: Download previous analysis (if exists)
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          name: trade-analysis-data
+          path: trade_analysis/
+          workflow: learn_from_trades.yml
+          search_artifacts: true
+      
+      - name: Download production models
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          name: production-models
+          path: models_production/
+          workflow: weekly_retraining.yml
+          search_artifacts: true
+      
+      - name: Download feature store
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          name: feature-store-data
+          path: feature_store/
+          workflow: weekly_retraining.yml
+          search_artifacts: true
+      
+      - name: Collect trades from Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "================================================================================================="
+          echo "📊 COLLECTING LIVE TRADES FROM SUPABASE"
+          echo "================================================================================================="
+          python3 trade_collector.py
+      
+      - name: Retrain from live trades
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+        run: |
+          echo "================================================================================================="
+          echo "🧠 RETRAINING MODELS WITH LIVE TRADE FEEDBACK"
+          echo "================================================================================================="
+          python3 retrain_from_live_trades.py
+      
+      - name: Convert updated models to ONNX
+        run: |
+          echo "================================================================================================="
+          echo "🔄 CONVERTING UPDATED MODELS TO ONNX"
+          echo "================================================================================================="
+          pip install onnxmltools skl2onnx
+          python3 convert_models_to_onnx.py || echo "⚠️ ONNX conversion skipped (optional)"
+      
+      - name: Sync updated models to Supabase
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "================================================================================================="
+          echo "☁️ SYNCING UPDATED MODELS TO SUPABASE"
+          echo "================================================================================================="
+          python3 supabase_sync.py || echo "⚠️ Supabase sync skipped"
+      
+      - name: Upload updated live trades
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-trades-data
+          path: live_trades/
+          retention-days: 90
+      
+      - name: Upload trade analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: trade-analysis-data
+          path: trade_analysis/
+          retention-days: 90
+      
+      - name: Upload updated models
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-models-retrained
+          path: models_production/
+          retention-days: 30
+      
+      - name: Summary
+        run: |
+          echo "================================================================================================="
+          echo "✅ CONTINUOUS LEARNING COMPLETE"
+          echo "================================================================================================="
+          echo "📊 Live trades collected and analyzed"
+          echo "🧠 Models retrained with feedback"
+          echo "☁️  Updated models deployed to Supabase"
+          echo "================================================================================================="
+

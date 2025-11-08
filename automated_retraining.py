@@ -1,9 +1,44 @@
 #!/usr/bin/env python3
 """
-AUTOMATED WEEKLY INCREMENTAL RETRAINING
-========================================
-Fetches only the LAST WEEK of data, appends to existing historical data,
-and retrains using the EXACT SAME methodology as production_final_system.py
+AUTOMATED WEEKLY INCREMENTAL RETRAINING - DATA REFRESH ONLY
+============================================================
+
+⚠️  CRITICAL: This script ONLY adds new data to prevent model staleness.
+            It does NOT change strategies, parameters, or methodologies.
+
+Purpose:
+--------
+- Fetch ONLY new data from the last week
+- Append to existing historical data  
+- Retrain using EXACT SAME methodology as original production training
+- Deploy ONLY if model passes ALL benchmarks
+
+What This Does:
+---------------
+✅ Adds new market data (last 7 days)
+✅ Uses SAME features from production_final_system.py
+✅ Uses SAME labeling method
+✅ Uses SAME training parameters (TP, SL, confidence, etc.)
+✅ Uses SAME hyperparameters (n_estimators, learning_rate, etc.)
+✅ Validates against SAME benchmarks (PF, DD, Sharpe, WR, Trades)
+
+What This Does NOT Do:
+-----------------------
+❌ Does NOT change strategies
+❌ Does NOT change TP/SL multipliers  
+❌ Does NOT change confidence thresholds
+❌ Does NOT experiment with new features
+❌ Does NOT adjust based on performance
+
+For Strategy Adjustments:
+--------------------------
+Use `retrain_from_live_trades.py` instead - that script learns from
+actual trading mistakes and adapts the model accordingly.
+
+Summary:
+--------
+• automated_retraining.py = Data refresh to prevent staleness
+• retrain_from_live_trades.py = Strategy adaptation based on live feedback
 """
 
 import os
@@ -17,6 +52,10 @@ import pandas as pd
 import numpy as np
 import requests
 from supabase import create_client
+
+# Import benchmark validator
+sys.path.insert(0, str(Path(__file__).parent))
+from benchmark_validator import BenchmarkValidator
 
 # Import the EXACT training system
 sys.path.insert(0, str(Path(__file__).parent))
@@ -388,22 +427,62 @@ def should_deploy_model(new_model: dict, old_model: dict = None):
 
 
 def deploy_model(symbol: str, timeframe: str, model_data: dict):
-    """Deploy model to production (same format as production_final_system)."""
+    """
+    Deploy model to production (same format as production_final_system).
+    
+    ⚠️  STRICT VALIDATION: Only models that PASS ALL benchmarks get deployed.
+    """
+    
+    # STRICT BENCHMARK VALIDATION BEFORE DEPLOYMENT
+    results = model_data['results']
+    passes, failures = BenchmarkValidator.validate(results, timeframe, strict=True)
+    
+    if not passes:
+        print(f"\n  ❌ DEPLOYMENT BLOCKED - Model FAILS benchmarks:")
+        for failure in failures:
+            print(f"     • {failure}")
+        print(f"  ⚠️  Model will NOT be deployed to production")
+        
+        # Save as FAILED instead
+        save_dir = CONFIG.MODEL_STORE / symbol
+        save_dir.mkdir(parents=True, exist_ok=True)
+        save_path = save_dir / f"{symbol}_{timeframe}_FAILED.pkl"
+        
+        with open(save_path, 'wb') as f:
+            pickle.dump({
+                'model': model_data['model'],
+                'features': model_data['features'],
+                'results': model_data['results'],
+                'params': model_data['params'],
+                'failed_benchmarks': failures,
+                'validation_date': datetime.now(timezone.utc).isoformat()
+            }, f)
+        
+        print(f"  💾 Saved as FAILED (not deployed): {save_path.name}")
+        return False
+    
+    # Model PASSES - deploy to production
+    print(f"\n  ✅ BENCHMARK VALIDATION PASSED - Deploying to production")
+    BenchmarkValidator.print_validation(symbol, timeframe, results, passes, failures)
+    
     save_dir = CONFIG.MODEL_STORE / symbol
     save_dir.mkdir(parents=True, exist_ok=True)
-    
-    status = "PRODUCTION_READY" if model_data['passed'] else "FAILED"
-    save_path = save_dir / f"{symbol}_{timeframe}_{status}.pkl"
+    save_path = save_dir / f"{symbol}_{timeframe}_PRODUCTION_READY.pkl"
     
     with open(save_path, 'wb') as f:
         pickle.dump({
             'model': model_data['model'],
             'features': model_data['features'],
             'results': model_data['results'],
-            'params': model_data['params']
+            'params': model_data['params'],
+            'symbol': symbol,
+            'timeframe': timeframe,
+            'backtest_results': results,
+            'retrained_at': datetime.now(timezone.utc).isoformat()
         }, f)
     
     print(f"  💾 Deployed to {save_path}")
+    return True
     
     # Update Supabase
     try:
