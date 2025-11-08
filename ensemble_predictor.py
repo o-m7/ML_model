@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 MULTI-MODEL ENSEMBLE PREDICTOR
-===============================
-Combines predictions from multiple models (across different timeframes)
-for improved accuracy and confidence.
+================================
+Combines predictions from multiple models (different timeframes) for better accuracy.
 """
 
-import pickle
 import sys
+import pickle
+import warnings
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
 import numpy as np
@@ -17,322 +17,261 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent))
 from production_final_system import BalancedModel
 
+warnings.filterwarnings('ignore')
+
 
 class EnsemblePredictor:
     """
     Ensemble predictor that combines multiple models for a symbol.
     
-    Strategies:
-    1. Majority vote: Simple democracy (each model gets 1 vote)
-    2. Confidence-weighted: Weight by prediction confidence
-    3. Performance-weighted: Weight by recent win rate from backtest
+    Voting strategies:
+    1. Majority vote - Simple democracy
+    2. Confidence-weighted - Weight by model confidence
+    3. Performance-weighted - Weight by recent win rate
     """
     
-    def __init__(self, symbol: str, model_dir: Path = Path("models_production")):
-        """
-        Initialize ensemble for a symbol.
-        
-        Args:
-            symbol: Trading symbol (e.g., 'XAUUSD')
-            model_dir: Directory containing production models
-        """
+    def __init__(self, symbol: str, models_dir: Path = Path("models_production")):
         self.symbol = symbol
-        self.model_dir = model_dir
+        self.models_dir = models_dir
         self.models = {}
         self.load_models()
     
     def load_models(self):
-        """Load all production-ready models for this symbol."""
-        symbol_dir = self.model_dir / self.symbol
+        """Load all production-ready models for the symbol."""
+        symbol_dir = self.models_dir / self.symbol
         
         if not symbol_dir.exists():
-            print(f"  ⚠️  No models found for {self.symbol}")
-            return
+            raise ValueError(f"No models found for {self.symbol}")
         
         # Load all PRODUCTION_READY models
-        for model_file in symbol_dir.glob("*_PRODUCTION_READY.pkl"):
+        for model_file in symbol_dir.glob(f"{self.symbol}_*_PRODUCTION_READY.pkl"):
+            timeframe = model_file.stem.split('_')[1]  # Extract timeframe from filename
+            
             try:
                 with open(model_file, 'rb') as f:
-                    data = pickle.load(f)
-                
-                # Extract timeframe from filename (e.g., "XAUUSD_5T_PRODUCTION_READY.pkl" -> "5T")
-                parts = model_file.stem.split('_')
-                timeframe = parts[1]  # Assuming format SYMBOL_TF_STATUS
-                
-                self.models[timeframe] = {
-                    'model': data['model'],
-                    'features': data['features'],
-                    'results': data.get('results', {}),
-                    'params': data.get('params', {})
-                }
-                
+                    model_data = pickle.load(f)
+                    self.models[timeframe] = {
+                        'model': model_data['model'],
+                        'features': model_data['features'],
+                        'metadata': model_data.get('metadata', {}),
+                        'results': model_data.get('results', {})
+                    }
+                    print(f"  ✅ Loaded {self.symbol} {timeframe} model")
             except Exception as e:
-                print(f"  ⚠️  Failed to load {model_file.name}: {e}")
+                print(f"  ⚠️  Failed to load {self.symbol} {timeframe}: {e}")
         
-        print(f"  ✅ Loaded {len(self.models)} models for {self.symbol}: {list(self.models.keys())}")
+        if not self.models:
+            raise ValueError(f"No production-ready models found for {self.symbol}")
+        
+        print(f"  📊 Loaded {len(self.models)} models for {self.symbol}: {list(self.models.keys())}")
     
-    def predict_single(self, timeframe: str, features: pd.DataFrame) -> Optional[Dict]:
-        """
-        Get prediction from a single model.
-        
-        Args:
-            timeframe: Model timeframe (e.g., '5T')
-            features: Feature DataFrame (must contain all required features)
-        
-        Returns:
-            Dict with prediction, probabilities, confidence, edge
-        """
+    def predict_single_model(self, timeframe: str, features: pd.DataFrame) -> Optional[Dict]:
+        """Get prediction from a single model."""
         if timeframe not in self.models:
             return None
         
-        model_data = self.models[timeframe]
-        model = model_data['model']
-        required_features = model_data['features']
+        model_info = self.models[timeframe]
+        model = model_info['model']
+        required_features = model_info['features']
         
-        # Ensure all required features are present
+        # Ensure we have all required features
         missing_features = set(required_features) - set(features.columns)
         if missing_features:
-            print(f"  ⚠️  Missing features for {timeframe}: {missing_features}")
+            print(f"  ⚠️  {timeframe}: Missing features {missing_features}")
             return None
         
-        # Extract features in correct order and predict
+        # Prepare features in correct order
         X = features[required_features].fillna(0).values
         
+        # Get prediction
         try:
             probs = model.predict_proba(X)
             
-            # probs shape: (n_samples, 3) for [Flat, Up, Down]
-            if len(probs.shape) == 2:
-                probs = probs[-1]  # Get last row if multiple samples
+            # probs shape: (n_samples, n_classes) where classes are [Flat, Up, Down]
+            flat_prob = float(probs[0, 0])
+            long_prob = float(probs[0, 1])
+            short_prob = float(probs[0, 2])
             
-            flat_prob, up_prob, down_prob = probs[0], probs[1], probs[2]
+            # Determine signal
+            max_prob = max(long_prob, short_prob)
             
-            # Determine prediction
-            max_prob = max(flat_prob, up_prob, down_prob)
-            
-            if up_prob == max_prob:
-                prediction = 'long'
-            elif down_prob == max_prob:
-                prediction = 'short'
+            if long_prob > short_prob and long_prob > flat_prob:
+                signal = 'long'
+                confidence = long_prob
+            elif short_prob > long_prob and short_prob > flat_prob:
+                signal = 'short'
+                confidence = short_prob
             else:
-                prediction = 'flat'
+                signal = 'flat'
+                confidence = flat_prob
             
-            # Calculate edge (difference between highest and second-highest probability)
-            sorted_probs = sorted([flat_prob, up_prob, down_prob], reverse=True)
+            # Calculate edge (difference between top 2 probabilities)
+            sorted_probs = sorted([flat_prob, long_prob, short_prob], reverse=True)
             edge = sorted_probs[0] - sorted_probs[1]
-            
-            # Get win rate from backtest results
-            win_rate = model_data['results'].get('win_rate', 50.0) / 100.0
             
             return {
                 'timeframe': timeframe,
-                'prediction': prediction,
-                'probabilities': {'flat': flat_prob, 'up': up_prob, 'down': down_prob},
-                'confidence': max_prob,
+                'signal': signal,
+                'confidence': confidence,
                 'edge': edge,
-                'win_rate': win_rate
+                'probs': {'flat': flat_prob, 'long': long_prob, 'short': short_prob}
             }
-            
+        
         except Exception as e:
-            print(f"  ❌ Prediction error for {timeframe}: {e}")
+            print(f"  ❌ {timeframe}: Prediction error: {e}")
             return None
     
-    def predict_ensemble(self, features: pd.DataFrame, 
-                        strategy: str = 'performance_weighted',
-                        min_models: int = 2) -> Optional[Dict]:
+    def ensemble_predict(self, features: pd.DataFrame, strategy: str = 'performance_weighted') -> Dict:
         """
-        Generate ensemble prediction from all available models.
+        Get ensemble prediction from all available models.
         
         Args:
-            features: Feature DataFrame
-            strategy: Voting strategy ('majority', 'confidence_weighted', 'performance_weighted')
-            min_models: Minimum number of models required for ensemble
+            features: DataFrame with calculated features (single row)
+            strategy: 'majority', 'confidence_weighted', or 'performance_weighted'
         
         Returns:
-            Dict with ensemble prediction, confidence, and voting details
+            Dict with ensemble prediction details
         """
-        if len(self.models) < min_models:
-            print(f"  ⚠️  Only {len(self.models)} models available (need {min_models})")
-            return None
+        predictions = []
         
         # Get predictions from all models
-        predictions = []
         for timeframe in self.models.keys():
-            pred = self.predict_single(timeframe, features)
-            if pred and pred['prediction'] != 'flat':  # Only use directional predictions
+            pred = self.predict_single_model(timeframe, features)
+            if pred:
                 predictions.append(pred)
         
-        if len(predictions) < min_models:
-            print(f"  ⚠️  Only {len(predictions)} valid predictions (need {min_models})")
-            return None
+        if not predictions:
+            return {
+                'signal': 'flat',
+                'confidence': 0.0,
+                'edge': 0.0,
+                'num_models': 0,
+                'votes': {}
+            }
         
         # Apply voting strategy
         if strategy == 'majority':
-            return self._majority_vote(predictions)
+            ensemble_result = self._majority_vote(predictions)
         elif strategy == 'confidence_weighted':
-            return self._confidence_weighted_vote(predictions)
+            ensemble_result = self._confidence_weighted_vote(predictions)
         elif strategy == 'performance_weighted':
-            return self._performance_weighted_vote(predictions)
+            ensemble_result = self._performance_weighted_vote(predictions)
         else:
             raise ValueError(f"Unknown strategy: {strategy}")
+        
+        ensemble_result['num_models'] = len(predictions)
+        ensemble_result['individual_predictions'] = predictions
+        
+        return ensemble_result
     
     def _majority_vote(self, predictions: List[Dict]) -> Dict:
-        """Simple majority voting (each model gets 1 vote)."""
-        votes = {'long': 0, 'short': 0}
+        """Simple majority voting."""
+        votes = {'long': 0, 'short': 0, 'flat': 0}
+        total_confidence = 0
+        total_edge = 0
         
         for pred in predictions:
-            if pred['prediction'] in votes:
-                votes[pred['prediction']] += 1
+            votes[pred['signal']] += 1
+            total_confidence += pred['confidence']
+            total_edge += pred['edge']
         
         # Determine winner
-        if votes['long'] > votes['short']:
-            ensemble_pred = 'long'
-        elif votes['short'] > votes['long']:
-            ensemble_pred = 'short'
-        else:
-            # Tie - use confidence as tiebreaker
-            long_confidence = np.mean([p['confidence'] for p in predictions if p['prediction'] == 'long'])
-            short_confidence = np.mean([p['confidence'] for p in predictions if p['prediction'] == 'short'])
-            ensemble_pred = 'long' if long_confidence > short_confidence else 'short'
-        
-        # Calculate ensemble confidence (average of agreeing models)
-        agreeing = [p for p in predictions if p['prediction'] == ensemble_pred]
-        ensemble_confidence = np.mean([p['confidence'] for p in agreeing])
-        ensemble_edge = np.mean([p['edge'] for p in agreeing])
+        winner = max(votes, key=votes.get)
         
         return {
-            'prediction': ensemble_pred,
-            'confidence': ensemble_confidence,
-            'edge': ensemble_edge,
-            'strategy': 'majority',
+            'signal': winner,
+            'confidence': total_confidence / len(predictions),
+            'edge': total_edge / len(predictions),
             'votes': votes,
-            'num_models': len(predictions),
-            'agreeing_models': len(agreeing),
-            'details': predictions
+            'strategy': 'majority'
         }
     
     def _confidence_weighted_vote(self, predictions: List[Dict]) -> Dict:
-        """Confidence-weighted voting (models with higher confidence get more weight)."""
-        weighted_votes = {'long': 0.0, 'short': 0.0}
+        """Vote weighted by model confidence."""
+        weighted_scores = {'long': 0.0, 'short': 0.0, 'flat': 0.0}
+        total_weight = 0.0
         
         for pred in predictions:
-            if pred['prediction'] in weighted_votes:
-                weighted_votes[pred['prediction']] += pred['confidence']
+            weight = pred['confidence']
+            weighted_scores[pred['signal']] += weight
+            total_weight += weight
+        
+        # Normalize
+        if total_weight > 0:
+            for signal in weighted_scores:
+                weighted_scores[signal] /= total_weight
         
         # Determine winner
-        ensemble_pred = 'long' if weighted_votes['long'] > weighted_votes['short'] else 'short'
+        winner = max(weighted_scores, key=weighted_scores.get)
+        confidence = weighted_scores[winner]
         
-        # Calculate ensemble confidence
-        total_weight = sum(weighted_votes.values())
-        ensemble_confidence = weighted_votes[ensemble_pred] / total_weight if total_weight > 0 else 0.5
-        
-        # Calculate ensemble edge
-        agreeing = [p for p in predictions if p['prediction'] == ensemble_pred]
-        ensemble_edge = np.mean([p['edge'] for p in agreeing]) if agreeing else 0.0
+        # Calculate edge
+        sorted_scores = sorted(weighted_scores.values(), reverse=True)
+        edge = sorted_scores[0] - sorted_scores[1] if len(sorted_scores) > 1 else 0.0
         
         return {
-            'prediction': ensemble_pred,
-            'confidence': ensemble_confidence,
-            'edge': ensemble_edge,
-            'strategy': 'confidence_weighted',
-            'weighted_votes': weighted_votes,
-            'num_models': len(predictions),
-            'agreeing_models': len(agreeing),
-            'details': predictions
+            'signal': winner,
+            'confidence': confidence,
+            'edge': edge,
+            'votes': {k: f"{v:.3f}" for k, v in weighted_scores.items()},
+            'strategy': 'confidence_weighted'
         }
     
     def _performance_weighted_vote(self, predictions: List[Dict]) -> Dict:
-        """Performance-weighted voting (models with higher win rates get more weight)."""
-        weighted_votes = {'long': 0.0, 'short': 0.0}
+        """Vote weighted by recent model performance (win rate)."""
+        weighted_scores = {'long': 0.0, 'short': 0.0, 'flat': 0.0}
+        total_weight = 0.0
         
         for pred in predictions:
-            if pred['prediction'] in weighted_votes:
-                # Weight by win_rate (0.5 to 1.0 typically)
-                weight = pred['win_rate']
-                weighted_votes[pred['prediction']] += weight
+            timeframe = pred['timeframe']
+            model_info = self.models.get(timeframe, {})
+            results = model_info.get('results', {})
+            
+            # Use win rate as weight (default to 0.5 if not available)
+            win_rate = results.get('win_rate', 50.0) / 100.0
+            
+            # Combine win rate with confidence for weight
+            weight = win_rate * pred['confidence']
+            
+            weighted_scores[pred['signal']] += weight
+            total_weight += weight
+        
+        # Normalize
+        if total_weight > 0:
+            for signal in weighted_scores:
+                weighted_scores[signal] /= total_weight
         
         # Determine winner
-        ensemble_pred = 'long' if weighted_votes['long'] > weighted_votes['short'] else 'short'
+        winner = max(weighted_scores, key=weighted_scores.get)
+        confidence = weighted_scores[winner]
         
-        # Calculate ensemble metrics
-        agreeing = [p for p in predictions if p['prediction'] == ensemble_pred]
-        
-        # Weight confidence by performance
-        if agreeing:
-            total_weight = sum(p['win_rate'] for p in agreeing)
-            ensemble_confidence = sum(p['confidence'] * p['win_rate'] for p in agreeing) / total_weight
-            ensemble_edge = sum(p['edge'] * p['win_rate'] for p in agreeing) / total_weight
-        else:
-            ensemble_confidence = 0.5
-            ensemble_edge = 0.0
+        # Calculate edge
+        sorted_scores = sorted(weighted_scores.values(), reverse=True)
+        edge = sorted_scores[0] - sorted_scores[1] if len(sorted_scores) > 1 else 0.0
         
         return {
-            'prediction': ensemble_pred,
-            'confidence': ensemble_confidence,
-            'edge': ensemble_edge,
-            'strategy': 'performance_weighted',
-            'weighted_votes': weighted_votes,
-            'num_models': len(predictions),
-            'agreeing_models': len(agreeing),
-            'details': predictions
+            'signal': winner,
+            'confidence': confidence,
+            'edge': edge,
+            'votes': {k: f"{v:.3f}" for k, v in weighted_scores.items()},
+            'strategy': 'performance_weighted'
         }
-    
-    def get_model_count(self) -> int:
-        """Return number of loaded models."""
-        return len(self.models)
-    
-    def get_timeframes(self) -> List[str]:
-        """Return list of available timeframes."""
-        return list(self.models.keys())
 
 
 def test_ensemble():
-    """Test ensemble predictor."""
-    import pandas as pd
-    
+    """Test the ensemble predictor."""
     print("\n" + "="*80)
     print("TESTING ENSEMBLE PREDICTOR")
     print("="*80 + "\n")
     
     # Test with XAUUSD
-    ensemble = EnsemblePredictor('XAUUSD')
-    
-    if ensemble.get_model_count() == 0:
-        print("❌ No models loaded. Exiting.")
-        return
-    
-    # Create dummy features (in real use, these come from calculate_features())
-    # For testing, we'll use the actual feature names from a loaded model
-    sample_model = list(ensemble.models.values())[0]
-    feature_names = sample_model['features']
-    
-    # Generate random features for testing
-    features_df = pd.DataFrame(
-        np.random.randn(1, len(feature_names)),
-        columns=feature_names
-    )
-    
-    print(f"Testing with {len(feature_names)} features\n")
-    
-    # Test all strategies
-    for strategy in ['majority', 'confidence_weighted', 'performance_weighted']:
-        print(f"\n--- Strategy: {strategy} ---")
-        result = ensemble.predict_ensemble(features_df, strategy=strategy)
-        
-        if result:
-            print(f"Prediction: {result['prediction'].upper()}")
-            print(f"Confidence: {result['confidence']:.3f}")
-            print(f"Edge: {result['edge']:.3f}")
-            print(f"Models: {result['num_models']} total, {result['agreeing_models']} agreeing")
-            print(f"Votes: {result.get('votes', result.get('weighted_votes', {}))}")
-        else:
-            print("❌ Prediction failed")
-    
-    print("\n" + "="*80)
-    print("✅ Test complete")
-    print("="*80 + "\n")
+    try:
+        ensemble = EnsemblePredictor('XAUUSD')
+        print(f"\n✅ Successfully loaded ensemble for XAUUSD with {len(ensemble.models)} models")
+        print(f"   Timeframes: {list(ensemble.models.keys())}")
+    except Exception as e:
+        print(f"❌ Failed to load ensemble: {e}")
 
 
 if __name__ == "__main__":
     test_ensemble()
-

@@ -3,6 +3,7 @@
 STANDALONE SIGNAL GENERATOR FOR GITHUB ACTIONS
 ================================================
 Generates signals without needing the API server running.
+Uses ensemble predictions from multiple models.
 """
 
 import os
@@ -13,9 +14,14 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 from supabase import create_client
 import pandas_ta as ta
+
+# Import ensemble predictor
+sys.path.insert(0, str(Path(__file__).parent))
+from ensemble_predictor import EnsemblePredictor
 
 # Load environment
 load_dotenv()
@@ -62,6 +68,20 @@ SYMBOL_PARAMS = {
 }
 
 TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
+
+# Cache for ensemble predictors (one per symbol)
+ENSEMBLE_CACHE = {}
+
+
+def get_ensemble(symbol: str) -> Optional[EnsemblePredictor]:
+    """Get or create ensemble predictor for a symbol."""
+    if symbol not in ENSEMBLE_CACHE:
+        try:
+            ENSEMBLE_CACHE[symbol] = EnsemblePredictor(symbol)
+        except Exception as e:
+            print(f"  ⚠️  Cannot load ensemble for {symbol}: {e}")
+            return None
+    return ENSEMBLE_CACHE[symbol]
 
 
 def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
@@ -112,8 +132,80 @@ def calculate_atr(df, period=14):
     return atr
 
 
+def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Calculate all features needed by the models."""
+    df = df.copy()
+    
+    # Price-based features
+    df['returns'] = df['close'].pct_change()
+    df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
+    
+    # Volatility
+    df['volatility'] = df['returns'].rolling(20).std()
+    df['atr'] = calculate_atr(df, 14)
+    df['atr14'] = df['atr']  # Alias
+    
+    # Moving averages
+    for period in [10, 20, 50, 100, 200]:
+        df[f'sma_{period}'] = df['close'].rolling(period).mean()
+        df[f'ema_{period}'] = df['close'].ewm(span=period).mean()
+    
+    df['ema20'] = df['ema_20']
+    df['ema50'] = df['ema_50']
+    
+    # RSI
+    delta = df['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    df['rsi'] = 100 - (100 / (1 + rs))
+    df['rsi14'] = df['rsi']
+    
+    # MACD
+    ema12 = df['close'].ewm(span=12).mean()
+    ema26 = df['close'].ewm(span=26).mean()
+    df['macd'] = ema12 - ema26
+    df['macd_signal'] = df['macd'].ewm(span=9).mean()
+    
+    # Bollinger Bands
+    sma20 = df['close'].rolling(20).mean()
+    std20 = df['close'].rolling(20).std()
+    df['bb_upper'] = sma20 + (std20 * 2)
+    df['bb_lower'] = sma20 - (std20 * 2)
+    df['bb_width'] = df['bb_upper'] - df['bb_lower']
+    df['bb_pct'] = (df['close'] - df['bb_lower']) / (df['bb_width'] + 1e-10)
+    
+    # Momentum
+    for period in [5, 10, 20]:
+        df[f'momentum_{period}'] = df['close'].pct_change(period)
+        df[f'mom_{period}'] = df[f'momentum_{period}']
+    
+    # Volume features
+    if 'volume' in df.columns:
+        df['volume_sma'] = df['volume'].rolling(20).mean()
+        df['volume_ratio'] = df['volume'] / (df['volume_sma'] + 1e-10)
+        df['vol_surge'] = df['volume_ratio']
+    
+    # Trend features
+    df['trend'] = ((df['ema20'] > df['ema50']).astype(int) * 2 - 1)
+    df['trend_str'] = abs(df['ema20'] - df['ema50']) / (df['atr14'] + 1e-10)
+    df['dist_ema50'] = (df['close'] - df['ema50']) / (df['atr14'] + 1e-10)
+    
+    # Additional features
+    df['rsi_norm'] = (df['rsi14'] - 50) / 50
+    df['rsi_extreme'] = ((df['rsi14'] < 30) | (df['rsi14'] > 70)).astype(int)
+    df['bb_pos'] = (df['bb_pct'] - 0.5) * 2
+    
+    # Volatility ratios
+    df['vol_10'] = df['close'].pct_change().rolling(10).std()
+    df['vol_20'] = df['close'].pct_change().rolling(20).std()
+    df['vol_ratio'] = df['vol_10'] / (df['vol_20'] + 1e-10)
+    
+    return df
+
+
 def generate_simple_signal(df):
-    """Generate a simple signal based on price action (fallback when API unavailable)."""
+    """Generate a simple signal based on price action (fallback when ensemble unavailable)."""
     # Calculate simple indicators
     df['sma_20'] = df['close'].rolling(20).mean()
     df['sma_50'] = df['close'].rolling(50).mean()
@@ -123,30 +215,53 @@ def generate_simple_signal(df):
     
     # Simple signal logic
     if current['close'] > current['sma_20'] > current['sma_50'] and current['rsi'] < 70:
-        return 'long', 0.55
+        return 'long', 0.55, 0.10
     elif current['close'] < current['sma_20'] < current['sma_50'] and current['rsi'] > 30:
-        return 'short', 0.55
+        return 'short', 0.55, 0.10
     else:
-        return 'long' if current['close'] > current['sma_20'] else 'short', 0.45
+        return 'long' if current['close'] > current['sma_20'] else 'short', 0.45, 0.05
 
 
 def process_symbol(symbol, timeframe):
-    """Process one symbol/timeframe."""
+    """Process one symbol/timeframe using ensemble predictions."""
     try:
         # Fetch data
-        df = fetch_polygon_data(symbol, timeframe)
-        if df is None or len(df) < 50:
+        df = fetch_polygon_data(symbol, timeframe, bars=250)
+        if df is None or len(df) < 100:
             print(f"  ⚠️  {symbol} {timeframe}: Insufficient data")
             return
         
+        # Calculate features
+        df = calculate_features(df)
+        
+        # Get ensemble predictor for this symbol
+        ensemble = get_ensemble(symbol)
+        
+        if ensemble:
+            # Use ensemble prediction
+            features_df = df.tail(1)  # Last row with all features
+            ensemble_result = ensemble.ensemble_predict(features_df, strategy='performance_weighted')
+            
+            signal_type = ensemble_result['signal']
+            confidence = ensemble_result['confidence']
+            edge = ensemble_result['edge']
+            num_models = ensemble_result['num_models']
+            
+            # Skip if signal is flat or confidence too low
+            if signal_type == 'flat' or confidence < 0.35:
+                print(f"  ⏭️  {symbol} {timeframe}: Ensemble → FLAT or low confidence ({confidence:.3f})")
+                return
+            
+            print(f"  📊 {symbol} {timeframe}: Ensemble ({num_models} models) → {signal_type.upper()} (conf: {confidence:.3f}, edge: {edge:.3f})")
+        else:
+            # Fallback to simple signal if ensemble unavailable
+            signal_type, confidence, edge = generate_simple_signal(df)
+            print(f"  ⚠️  {symbol} {timeframe}: Using fallback signal → {signal_type.upper()}")
+        
         # Calculate ATR for TP/SL
-        df['atr'] = calculate_atr(df)
         atr = float(df['atr'].iloc[-1])
         if pd.isna(atr) or atr == 0:
             atr = float(df['close'].iloc[-1]) * 0.02
-        
-        # Generate signal
-        signal_type, confidence = generate_simple_signal(df)
         
         # Calculate TP/SL
         entry_price = float(df['close'].iloc[-1])
@@ -164,8 +279,8 @@ def process_symbol(symbol, timeframe):
             'symbol': symbol,
             'timeframe': timeframe,
             'signal_type': signal_type,
-            'confidence': confidence,
-            'edge': 0.10,
+            'confidence': float(confidence),
+            'edge': float(edge),
             'entry_price': entry_price,
             'take_profit': tp_price,
             'stop_loss': sl_price,
