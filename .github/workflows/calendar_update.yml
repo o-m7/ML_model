@@ -1,0 +1,40 @@
+name: Update Economic Calendar
+
+on:
+  schedule:
+    # Run daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  update-calendar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install requests pandas python-dotenv supabase
+      
+      - name: Update economic calendar
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "================================================================================================="
+          echo "ECONOMIC CALENDAR UPDATE"
+          echo "================================================================================================="
+          python3 fetch_economic_calendar.py
+          echo "================================================================================================="
+          echo "CALENDAR UPDATE COMPLETE"
+          echo "================================================================================================="
+

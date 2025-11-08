@@ -19,9 +19,10 @@ from dotenv import load_dotenv
 from supabase import create_client
 import pandas_ta as ta
 
-# Import ensemble predictor
+# Import ensemble predictor and news filter
 sys.path.insert(0, str(Path(__file__).parent))
 from ensemble_predictor import EnsemblePredictor
+from news_filter import is_in_blackout_window
 
 # Load environment
 load_dotenv()
@@ -225,6 +226,12 @@ def generate_simple_signal(df):
 def process_symbol(symbol, timeframe):
     """Process one symbol/timeframe using ensemble predictions."""
     try:
+        # Check for news blackout
+        blackout_result = is_in_blackout_window(symbol)
+        if blackout_result['is_blackout']:
+            print(f"  🚫 {symbol} {timeframe}: BLACKOUT - {blackout_result['reason']}")
+            return
+        
         # Fetch data
         df = fetch_polygon_data(symbol, timeframe, bars=250)
         if df is None or len(df) < 100:
