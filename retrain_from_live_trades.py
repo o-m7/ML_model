@@ -16,8 +16,16 @@ import lightgbm as lgb
 
 # Import from production system
 sys.path.insert(0, str(Path(__file__).parent))
-from production_final_system import BalancedModel, SYMBOL_PARAMS, ProductionConfig, BacktestEngine
+from production_final_system import BalancedModel, ProductionConfig, BacktestEngine
+
+# Backwards compatibility alias
+SYMBOL_PARAMS = ProductionConfig.SYMBOL_PARAMS
 from benchmark_validator import BenchmarkValidator
+
+# Ensure pickle can resolve BalancedModel even if it was saved under __main__
+main_module = sys.modules.get("__main__")
+if main_module is not None and not hasattr(main_module, "BalancedModel"):
+    setattr(main_module, "BalancedModel", BalancedModel)
 
 
 class LiveTradeRetrainer:
@@ -234,7 +242,7 @@ class LiveTradeRetrainer:
         print(f"\n  🔄 Running full backtest to validate benchmarks...")
         
         # Get symbol params
-        params = SYMBOL_PARAMS.get(symbol, {}).get(timeframe, {})
+        params = ProductionConfig.SYMBOL_PARAMS.get(symbol, {}).get(timeframe, {})
         
         # Create backtester
         backtester = BacktestEngine(

@@ -49,45 +49,45 @@ class ProductionConfig:
     SYMBOL_PARAMS = {
         'XAUUSD': {
             '5T': {'tp': 1.4, 'sl': 1.0, 'min_conf': 0.40, 'min_edge': 0.12, 'pos_size': 0.4},
-            '15T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.5},
-            '30T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.6},
-            '1H': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.5},  # FIXED: Lower thresholds
-            '4H': {'tp': 1.8, 'sl': 1.0, 'min_conf': 0.30, 'min_edge': 0.05, 'pos_size': 0.6},  # FIXED: Much lower thresholds
+            '15T': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.45, 'min_edge': 0.14, 'pos_size': 0.45},
+            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.6},
+            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.15, 'pos_size': 0.40},
+            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.15, 'pos_size': 0.40},
         },
         'XAGUSD': {
             '5T': {'tp': 1.4, 'sl': 1.0, 'min_conf': 0.40, 'min_edge': 0.12, 'pos_size': 0.2},
             '15T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.3},
-            '30T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.3},
-            '1H': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.2},  # FIXED: Lower conf/edge, lower pos size
-            '4H': {'tp': 1.7, 'sl': 1.0, 'min_conf': 0.30, 'min_edge': 0.06, 'pos_size': 0.3},  # FIXED: Much lower thresholds
+            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.3},
+            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.15, 'pos_size': 0.18},
+            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.14, 'pos_size': 0.22},
         },
         'EURUSD': {
             '5T': {'tp': 1.2, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.6},
             '15T': {'tp': 1.4, 'sl': 1.0, 'min_conf': 0.32, 'min_edge': 0.06, 'pos_size': 0.6},  # FIXED: Higher TP, lower thresholds
-            '30T': {'tp': 1.3, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.7},
-            '1H': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.32, 'min_edge': 0.06, 'pos_size': 0.5},  # FIXED: Higher TP, much lower thresholds
-            '4H': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.28, 'min_edge': 0.04, 'pos_size': 0.5},  # FIXED: Much more aggressive
+            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.7},
+            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.32, 'min_edge': 0.06, 'pos_size': 0.5},  # FIXED: Higher TP, much lower thresholds
+            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.28, 'min_edge': 0.04, 'pos_size': 0.5},  # FIXED: Much more aggressive
         },
         'GBPUSD': {
             '5T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.4},
             '15T': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.5},
-            '30T': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.5},
-            '1H': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.5},
-            '4H': {'tp': 1.7, 'sl': 1.0, 'min_conf': 0.28, 'min_edge': 0.04, 'pos_size': 0.4},  # FIXED: Much lower thresholds
+            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.32, 'min_edge': 0.06, 'pos_size': 0.5},  # now evaluated with lower trade requirement
+            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.5},
+            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.28, 'min_edge': 0.04, 'pos_size': 0.4},  # FIXED: Much lower thresholds
         },
         'AUDUSD': {
             '5T': {'tp': 1.4, 'sl': 1.0, 'min_conf': 0.40, 'min_edge': 0.12, 'pos_size': 0.6},
             '15T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.7},
-            '30T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.7},
-            '1H': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.7},
-            '4H': {'tp': 1.7, 'sl': 1.0, 'min_conf': 0.30, 'min_edge': 0.05, 'pos_size': 0.5},  # FIXED: Lower thresholds & pos size
+            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.15, 'pos_size': 0.6},
+            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.7},
+            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.30, 'min_edge': 0.05, 'pos_size': 0.5},  # FIXED: Lower thresholds & pos size
         },
         'NZDUSD': {
-            '5T': {'tp': 1.4, 'sl': 1.0, 'min_conf': 0.40, 'min_edge': 0.12, 'pos_size': 0.5},
-            '15T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.6},
-            '30T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.6},
-            '1H': {'tp': 1.6, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.7},
-            '4H': {'tp': 1.7, 'sl': 1.0, 'min_conf': 0.32, 'min_edge': 0.06, 'pos_size': 0.5},  # FIXED: Lower thresholds & pos size
+            '5T': {'tp': 1.4, 'sl': 1.0, 'min_conf': 0.45, 'min_edge': 0.14, 'pos_size': 0.45},
+            '15T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.42, 'min_edge': 0.12, 'pos_size': 0.55},
+            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.6},
+            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.45, 'min_edge': 0.12, 'pos_size': 0.60},
+            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.15, 'pos_size': 0.40},
         },
     }
     
@@ -110,7 +110,7 @@ class ProductionConfig:
     MIN_TRADES_BY_TF = {
         '5T': 100,   # Higher frequency = more trades expected
         '15T': 60,   # Realistic for 12 months
-        '30T': 50,   # Between 15T and 1H
+        '30T': 80,   # Moderate-frequency timeframe
         '1H': 40,    # Realistic for 12 months
         '4H': 25,    # Lower frequency = fewer trades
     }
@@ -118,6 +118,9 @@ class ProductionConfig:
 
 CONFIG = ProductionConfig()
 CONFIG.MODEL_STORE.mkdir(parents=True, exist_ok=True)
+
+# Backwards-compatibility for scripts expecting SYMBOL_PARAMS at module level
+SYMBOL_PARAMS = ProductionConfig.SYMBOL_PARAMS
 
 
 # ============================================================================
@@ -548,6 +551,10 @@ def train_production(symbol: str, timeframe: str) -> Dict:
         
         engine = ProductionBacktest(test_df, symbol, params['pos_size'])
         results = engine.run(signals_long, signals_short, long_probs, short_probs, params['tp'], params['sl'])
+        results['symbol'] = symbol
+        results['timeframe'] = timeframe
+        results['trades'] = engine.trades.copy()
+        print(f"DEBUG Result keys for {symbol} {timeframe}: {list(results.keys())}")
         
         # Check
         print("[5/5] Checking benchmarks...")
@@ -594,12 +601,15 @@ def train_production(symbol: str, timeframe: str) -> Dict:
             'passed': passed,
             'results': results
         }
-        
+
     except Exception as e:
         print(f"\n✗ ERROR: {e}")
         import traceback
         traceback.print_exc()
         return {'symbol': symbol, 'timeframe': timeframe, 'passed': False, 'error': str(e)}
+
+# Backwards compatibility alias for legacy imports
+BacktestEngine = ProductionBacktest
 
 
 def train_all_production():

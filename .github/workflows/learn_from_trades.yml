@@ -10,6 +10,9 @@ jobs:
   collect-and-retrain:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
     
     steps:
       - name: Checkout code
@@ -33,6 +36,7 @@ jobs:
           path: live_trades/
           workflow: learn_from_trades.yml
           search_artifacts: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Download previous analysis (if exists)
         uses: dawidd6/action-download-artifact@v3
@@ -42,6 +46,7 @@ jobs:
           path: trade_analysis/
           workflow: learn_from_trades.yml
           search_artifacts: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Download production models
         uses: dawidd6/action-download-artifact@v3
@@ -51,6 +56,7 @@ jobs:
           path: models_production/
           workflow: weekly_retraining.yml
           search_artifacts: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Download feature store
         uses: dawidd6/action-download-artifact@v3
@@ -60,6 +66,7 @@ jobs:
           path: feature_store/
           workflow: weekly_retraining.yml
           search_artifacts: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Collect trades from Supabase
         env:
