@@ -326,7 +326,7 @@ def process_symbol(symbol, timeframe):
 
 
 def main():
-    """Main execution."""
+    """Main execution - generates signals for all production models."""
     print("\n" + "="*80)
     print(f"STANDALONE SIGNAL GENERATOR - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("="*80 + "\n")
