@@ -41,5 +41,5 @@ jobs:
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "=== Starting standalone signal generator ==="
-          ls -la generate_signals_standalone.py
-          python3 generate_signals_standalone.py
+          ls -la signal_generator.py
+          python3 signal_generator.py
