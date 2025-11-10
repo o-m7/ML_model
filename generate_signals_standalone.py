@@ -77,6 +77,15 @@ SYMBOL_PARAMS = {
 
 TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
 
+# Minimum bars needed per timeframe (enough for indicators without over-fetching)
+MIN_BARS_REQUIRED = {
+    '5T': 120,
+    '15T': 120,
+    '30T': 150,
+    '1H': 80,
+    '4H': 40,
+}
+
 # Cache for ensemble predictors (one per symbol)
 ENSEMBLE_CACHE = {}
 
@@ -184,8 +193,10 @@ def process_symbol(symbol, timeframe):
         
         # Fetch raw data
         raw_df = fetch_polygon_data(symbol, timeframe, bars=400)
-        if raw_df is None or len(raw_df) < 120:
-            print(f"  ⚠️  {symbol} {timeframe}: Insufficient data")
+        min_bars = MIN_BARS_REQUIRED.get(timeframe, 120)
+        if raw_df is None or len(raw_df) < min_bars:
+            got = 0 if raw_df is None else len(raw_df)
+            print(f"  ⚠️  {symbol} {timeframe}: Insufficient data (have {got} < {min_bars} bars)")
             return
         
         # Build feature set aligned with production models
@@ -208,14 +219,11 @@ def process_symbol(symbol, timeframe):
             edge = ensemble_result['edge']
             num_models = ensemble_result['num_models']
             
-            # Skip if signal is flat or confidence too low
-            if num_models == 0:
-                print(f"  ⚠️  {symbol} {timeframe}: Ensemble had no valid model votes, falling back to simple signal")
+            if num_models == 0 or signal_type == 'flat' or confidence < 0.35:
+                reason = "no model votes" if num_models == 0 else f"conf {confidence:.3f}"
+                print(f"  ⚠️  {symbol} {timeframe}: Ensemble fallback triggered ({reason})")
                 signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
-            elif signal_type == 'flat' or confidence < 0.35:
-                print(f"  ⏭️  {symbol} {timeframe}: Ensemble → FLAT or low confidence ({confidence:.3f})")
-                return
-            if num_models > 0:
+            else:
                 print(f"  📊 {symbol} {timeframe}: Ensemble ({num_models} models) → {signal_type.upper()} (conf: {confidence:.3f}, edge: {edge:.3f})")
         else:
             # Fallback to simple signal if ensemble unavailable
