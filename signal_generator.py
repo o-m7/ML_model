@@ -60,23 +60,24 @@ s3_client = boto3.client(
 )
 
 # Models to process (from your production system)
+# NOTE: 4H timeframes temporarily disabled - Polygon REST API doesn't provide real-time 4H forex data
 MODELS = [
     ('AUDUSD', '15T'), ('AUDUSD', '30T'), ('AUDUSD', '5T'), ('AUDUSD', '1H'),
     ('EURUSD', '30T'), ('EURUSD', '5T'),
     ('GBPUSD', '15T'), ('GBPUSD', '1H'), ('GBPUSD', '30T'), ('GBPUSD', '5T'),
-    ('NZDUSD', '15T'), ('NZDUSD', '1H'), ('NZDUSD', '30T'), ('NZDUSD', '4H'), ('NZDUSD', '5T'),
-    ('XAGUSD', '15T'), ('XAGUSD', '1H'), ('XAGUSD', '30T'), ('XAGUSD', '4H'), ('XAGUSD', '5T'),
-    ('XAUUSD', '15T'), ('XAUUSD', '1H'), ('XAUUSD', '30T'), ('XAUUSD', '4H'), ('XAUUSD', '5T'),
+    ('NZDUSD', '15T'), ('NZDUSD', '1H'), ('NZDUSD', '30T'), ('NZDUSD', '5T'),
+    ('XAGUSD', '15T'), ('XAGUSD', '1H'), ('XAGUSD', '30T'), ('XAGUSD', '5T'),
+    ('XAUUSD', '15T'), ('XAUUSD', '1H'), ('XAUUSD', '30T'), ('XAUUSD', '5T'),
 ]
 
-# Ticker mapping for Polygon S3 flat files (uses hyphenated format)
+# Ticker mapping for Polygon
 TICKER_MAP = {
-    'XAUUSD': 'C:XAU-USD',
-    'XAGUSD': 'C:XAG-USD',
-    'EURUSD': 'C:EUR-USD',
-    'GBPUSD': 'C:GBP-USD',
-    'AUDUSD': 'C:AUD-USD',
-    'NZDUSD': 'C:NZD-USD',
+    'XAUUSD': 'C:XAUUSD',
+    'XAGUSD': 'C:XAGUSD',
+    'EURUSD': 'C:EURUSD',
+    'GBPUSD': 'C:GBPUSD',
+    'AUDUSD': 'C:AUDUSD',
+    'NZDUSD': 'C:NZDUSD',
 }
 
 # TP/SL Parameters
@@ -156,8 +157,16 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
     ticker = TICKER_MAP.get(symbol, symbol)
     minutes = TIMEFRAME_MINUTES[timeframe]
     
+    # For 4H, fetch 1H bars and resample (4H bars are stale on API)
+    if timeframe == '4H':
+        fetch_minutes = 60  # Fetch 1H bars
+        bars_to_fetch = bars * 8  # Need 8x more to ensure fresh data after resampling
+    else:
+        fetch_minutes = minutes
+        bars_to_fetch = bars
+    
     end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(minutes=minutes * bars * 2)
+    start_time = end_time - timedelta(minutes=fetch_minutes * bars_to_fetch * 2)
     
     params = {
         'adjusted': 'true',
@@ -166,7 +175,7 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
         'apiKey': POLYGON_API_KEY
     }
     
-    multiplier = minutes
+    multiplier = fetch_minutes
     timespan = 'minute'
     from_date = start_time.strftime('%Y-%m-%d')
     to_date = end_time.strftime('%Y-%m-%d')
@@ -184,6 +193,16 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
         df = df.rename(columns={'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
         df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
         df = df.sort_index()
+        
+        # Resample to 4H if needed
+        if timeframe == '4H':
+            df = df.resample('4H').agg({
+                'open': 'first',
+                'high': 'max',
+                'low': 'min',
+                'close': 'last',
+                'volume': 'sum'
+            }).dropna()
         
         return df.tail(bars)
         
@@ -225,7 +244,13 @@ def process_symbol(symbol, timeframe):
 
         last_bar_time = raw_df.index[-1]
         staleness = datetime.now(timezone.utc) - last_bar_time
-        max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
+        
+        # For 4H, allow up to 24 hours staleness (S3 files update overnight)
+        if timeframe == '4H':
+            max_allowed = timedelta(hours=24)
+        else:
+            max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
+            
         if staleness > max_allowed:
             print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")
             return
