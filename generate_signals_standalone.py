@@ -199,6 +199,13 @@ def process_symbol(symbol, timeframe):
             print(f"  ⚠️  {symbol} {timeframe}: Insufficient data (have {got} < {min_bars} bars)")
             return
         
+        last_bar_time = raw_df.index[-1]
+        staleness = datetime.now(timezone.utc) - last_bar_time
+        max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
+        if staleness > max_allowed:
+            print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")
+            return
+        
         # Build feature set aligned with production models
         feature_df = build_feature_frame(raw_df)
         if feature_df.empty:
@@ -209,6 +216,14 @@ def process_symbol(symbol, timeframe):
         
         # Get ensemble predictor for this symbol
         ensemble = get_ensemble(symbol)
+        required_features = set()
+        if ensemble:
+            for model_info in ensemble.models.values():
+                required_features.update(model_info['features'])
+        missing_features = required_features - set(features_row.columns)
+        if missing_features:
+            print(f"  ⚠️  {symbol} {timeframe}: Missing model features {sorted(missing_features)[:10]}... using fallback")
+            ensemble = None
         
         if ensemble:
             # Use ensemble prediction
@@ -223,12 +238,15 @@ def process_symbol(symbol, timeframe):
                 reason = "no model votes" if num_models == 0 else f"conf {confidence:.3f}"
                 print(f"  ⚠️  {symbol} {timeframe}: Ensemble fallback triggered ({reason})")
                 signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
+                source = 'fallback'
             else:
                 print(f"  📊 {symbol} {timeframe}: Ensemble ({num_models} models) → {signal_type.upper()} (conf: {confidence:.3f}, edge: {edge:.3f})")
+                source = 'ensemble'
         else:
             # Fallback to simple signal if ensemble unavailable
             signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
             print(f"  ⚠️  {symbol} {timeframe}: Using fallback signal → {signal_type.upper()}")
+            source = 'fallback'
         
         # Check sentiment filter
         sentiment = get_recent_sentiment(symbol)
@@ -258,7 +276,7 @@ def process_symbol(symbol, timeframe):
             sl_price = entry_price + (atr * params['sl'])
         
         # Store in Supabase
-        supabase.table('live_signals').insert({
+        supabase_payload = {
             'symbol': symbol,
             'timeframe': timeframe,
             'signal_type': signal_type,
@@ -269,8 +287,9 @@ def process_symbol(symbol, timeframe):
             'stop_loss': sl_price,
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'status': 'active',
-            'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-        }).execute()
+            'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+        }
+        supabase.table('live_signals').insert(supabase_payload).execute()
         
         print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {entry_price:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
         
