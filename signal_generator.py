@@ -143,7 +143,9 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
     minutes = TIMEFRAME_MINUTES[timeframe]
     
     end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(minutes=minutes * bars * 2)
+    # Request 3x more time range to account for weekends/market closures
+    # For 4H bars, this gives us ~60 days instead of ~26 days
+    start_time = end_time - timedelta(minutes=minutes * bars * 3)
     
     params = {
         'adjusted': 'true',
@@ -163,6 +165,8 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
         data = response.json()
         
         if 'results' not in data or not data['results']:
+            if 'status' in data and data['status'] == 'ERROR':
+                print(f"  ❌ Polygon API error for {symbol} {timeframe}: {data.get('error', 'Unknown error')}")
             return None
             
         df = pd.DataFrame(data['results'])
