@@ -12,8 +12,6 @@ import time
 import requests
 import pandas as pd
 import numpy as np
-import boto3
-import io
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
