@@ -77,11 +77,20 @@ SYMBOL_PARAMS = {
 
 TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
 
-# Minimum bars needed per timeframe (enough for indicators without over-fetching)
+# Number of bars to keep per timeframe (balances history with API limits)
+BARS_PER_TF = {
+    '5T': 400,
+    '15T': 240,
+    '30T': 160,
+    '1H': 120,
+    '4H': 80,
+}
+
+# Minimum bars needed per timeframe
 MIN_BARS_REQUIRED = {
     '5T': 120,
     '15T': 120,
-    '30T': 150,
+    '30T': 120,
     '1H': 80,
     '4H': 40,
 }
@@ -143,7 +152,11 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
         'apiKey': POLYGON_API_KEY
     }
     
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{minutes}/minute/{int(start_time.timestamp()*1000)}/{int(end_time.timestamp()*1000)}"
+    multiplier = minutes
+    timespan = 'minute'
+    from_date = start_time.strftime('%Y-%m-%d')
+    to_date = end_time.strftime('%Y-%m-%d')
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
     
     try:
         response = requests.get(url, params=params, timeout=30)
@@ -192,7 +205,7 @@ def process_symbol(symbol, timeframe):
             return
         
         # Fetch raw data
-        raw_df = fetch_polygon_data(symbol, timeframe, bars=400)
+    raw_df = fetch_polygon_data(symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200))
         min_bars = MIN_BARS_REQUIRED.get(timeframe, 120)
         if raw_df is None or len(raw_df) < min_bars:
             got = 0 if raw_df is None else len(raw_df)
