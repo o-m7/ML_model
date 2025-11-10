@@ -40,10 +40,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "=== Starting standalone signal generator ==="
+          echo "=== Environment Check ==="
+          echo "POLYGON_API_KEY present: $([[ -n "$POLYGON_API_KEY" ]] && echo 'YES' || echo 'NO')"
+          echo "SUPABASE_URL present: $([[ -n "$SUPABASE_URL" ]] && echo 'YES' || echo 'NO')"
+          echo "SUPABASE_KEY present: $([[ -n "$SUPABASE_KEY" ]] && echo 'YES' || echo 'NO')"
+          echo ""
+          echo "=== File Check ==="
           ls -la signal_generator.py
-          echo "=== Checking environment variables ==="
-          echo "POLYGON_API_KEY: ${POLYGON_API_KEY:0:10}..."
-          echo "SUPABASE_URL: ${SUPABASE_URL}"
-          echo "SUPABASE_KEY: ${SUPABASE_KEY:0:10}..."
+          echo ""
+          echo "=== Running Signal Generator ==="
           python3 signal_generator.py
