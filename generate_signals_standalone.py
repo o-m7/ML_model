@@ -23,6 +23,13 @@ import pandas_ta as ta
 sys.path.insert(0, str(Path(__file__).parent))
 from ensemble_predictor import EnsemblePredictor
 from news_filter import is_in_blackout_window
+from production_final_system import BalancedModel
+from live_feature_utils import build_feature_frame
+
+# Ensure BalancedModel is available for pickle when this script runs as __main__
+_main_module = sys.modules.get("__main__")
+if _main_module is not None and not hasattr(_main_module, "BalancedModel"):
+    setattr(_main_module, "BalancedModel", BalancedModel)
 
 # Load environment
 load_dotenv()
@@ -60,12 +67,12 @@ TICKER_MAP = {
 
 # TP/SL Parameters
 SYMBOL_PARAMS = {
-    'XAUUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 1.5, 'sl': 1.0}, '1H': {'tp': 1.6, 'sl': 1.0}, '4H': {'tp': 1.8, 'sl': 1.0}},
-    'XAGUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 1.5, 'sl': 1.0}, '1H': {'tp': 1.5, 'sl': 1.0}, '4H': {'tp': 1.7, 'sl': 1.0}},
-    'EURUSD': {'5T': {'tp': 1.2, 'sl': 1.0}, '15T': {'tp': 1.4, 'sl': 1.0}, '30T': {'tp': 1.3, 'sl': 1.0}, '1H': {'tp': 1.5, 'sl': 1.0}, '4H': {'tp': 1.6, 'sl': 1.0}},
-    'GBPUSD': {'5T': {'tp': 1.5, 'sl': 1.0}, '15T': {'tp': 1.6, 'sl': 1.0}, '30T': {'tp': 1.6, 'sl': 1.0}, '1H': {'tp': 1.6, 'sl': 1.0}, '4H': {'tp': 1.7, 'sl': 1.0}},
-    'AUDUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 1.5, 'sl': 1.0}, '1H': {'tp': 1.6, 'sl': 1.0}, '4H': {'tp': 1.7, 'sl': 1.0}},
-    'NZDUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 1.5, 'sl': 1.0}, '1H': {'tp': 1.6, 'sl': 1.0}, '4H': {'tp': 1.7, 'sl': 1.0}},
+    'XAUUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.6, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
+    'XAGUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
+    'EURUSD': {'5T': {'tp': 1.2, 'sl': 1.0}, '15T': {'tp': 1.4, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
+    'GBPUSD': {'5T': {'tp': 1.5, 'sl': 1.0}, '15T': {'tp': 1.6, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
+    'AUDUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
+    'NZDUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
 }
 
 TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
@@ -148,90 +155,6 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
         return None
 
 
-def calculate_atr(df, period=14):
-    """Calculate ATR."""
-    high_low = df['high'] - df['low']
-    high_close = abs(df['high'] - df['close'].shift())
-    low_close = abs(df['low'] - df['close'].shift())
-    
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    atr = tr.rolling(window=period).mean()
-    
-    return atr
-
-
-def calculate_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Calculate all features needed by the models."""
-    df = df.copy()
-    
-    # Price-based features
-    df['returns'] = df['close'].pct_change()
-    df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
-    
-    # Volatility
-    df['volatility'] = df['returns'].rolling(20).std()
-    df['atr'] = calculate_atr(df, 14)
-    df['atr14'] = df['atr']  # Alias
-    
-    # Moving averages
-    for period in [10, 20, 50, 100, 200]:
-        df[f'sma_{period}'] = df['close'].rolling(period).mean()
-        df[f'ema_{period}'] = df['close'].ewm(span=period).mean()
-    
-    df['ema20'] = df['ema_20']
-    df['ema50'] = df['ema_50']
-    
-    # RSI
-    delta = df['close'].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
-    df['rsi'] = 100 - (100 / (1 + rs))
-    df['rsi14'] = df['rsi']
-    
-    # MACD
-    ema12 = df['close'].ewm(span=12).mean()
-    ema26 = df['close'].ewm(span=26).mean()
-    df['macd'] = ema12 - ema26
-    df['macd_signal'] = df['macd'].ewm(span=9).mean()
-    
-    # Bollinger Bands
-    sma20 = df['close'].rolling(20).mean()
-    std20 = df['close'].rolling(20).std()
-    df['bb_upper'] = sma20 + (std20 * 2)
-    df['bb_lower'] = sma20 - (std20 * 2)
-    df['bb_width'] = df['bb_upper'] - df['bb_lower']
-    df['bb_pct'] = (df['close'] - df['bb_lower']) / (df['bb_width'] + 1e-10)
-    
-    # Momentum
-    for period in [5, 10, 20]:
-        df[f'momentum_{period}'] = df['close'].pct_change(period)
-        df[f'mom_{period}'] = df[f'momentum_{period}']
-    
-    # Volume features
-    if 'volume' in df.columns:
-        df['volume_sma'] = df['volume'].rolling(20).mean()
-        df['volume_ratio'] = df['volume'] / (df['volume_sma'] + 1e-10)
-        df['vol_surge'] = df['volume_ratio']
-    
-    # Trend features
-    df['trend'] = ((df['ema20'] > df['ema50']).astype(int) * 2 - 1)
-    df['trend_str'] = abs(df['ema20'] - df['ema50']) / (df['atr14'] + 1e-10)
-    df['dist_ema50'] = (df['close'] - df['ema50']) / (df['atr14'] + 1e-10)
-    
-    # Additional features
-    df['rsi_norm'] = (df['rsi14'] - 50) / 50
-    df['rsi_extreme'] = ((df['rsi14'] < 30) | (df['rsi14'] > 70)).astype(int)
-    df['bb_pos'] = (df['bb_pct'] - 0.5) * 2
-    
-    # Volatility ratios
-    df['vol_10'] = df['close'].pct_change().rolling(10).std()
-    df['vol_20'] = df['close'].pct_change().rolling(20).std()
-    df['vol_ratio'] = df['vol_10'] / (df['vol_20'] + 1e-10)
-    
-    return df
-
-
 def generate_simple_signal(df):
     """Generate a simple signal based on price action (fallback when ensemble unavailable)."""
     # Calculate simple indicators
@@ -259,22 +182,26 @@ def process_symbol(symbol, timeframe):
             print(f"  🚫 {symbol} {timeframe}: BLACKOUT - {blackout_result['reason']}")
             return
         
-        # Fetch data
-        df = fetch_polygon_data(symbol, timeframe, bars=250)
-        if df is None or len(df) < 100:
+        # Fetch raw data
+        raw_df = fetch_polygon_data(symbol, timeframe, bars=400)
+        if raw_df is None or len(raw_df) < 120:
             print(f"  ⚠️  {symbol} {timeframe}: Insufficient data")
             return
         
-        # Calculate features
-        df = calculate_features(df)
+        # Build feature set aligned with production models
+        feature_df = build_feature_frame(raw_df)
+        if feature_df.empty:
+            print(f"  ⚠️  {symbol} {timeframe}: Unable to build feature set (insufficient history or NaNs)")
+            return
+        
+        features_row = feature_df.tail(1)
         
         # Get ensemble predictor for this symbol
         ensemble = get_ensemble(symbol)
         
         if ensemble:
             # Use ensemble prediction
-            features_df = df.tail(1)  # Last row with all features
-            ensemble_result = ensemble.ensemble_predict(features_df, strategy='performance_weighted')
+            ensemble_result = ensemble.ensemble_predict(features_row, strategy='performance_weighted')
             
             signal_type = ensemble_result['signal']
             confidence = ensemble_result['confidence']
@@ -282,34 +209,37 @@ def process_symbol(symbol, timeframe):
             num_models = ensemble_result['num_models']
             
             # Skip if signal is flat or confidence too low
-            if signal_type == 'flat' or confidence < 0.35:
+            if num_models == 0:
+                print(f"  ⚠️  {symbol} {timeframe}: Ensemble had no valid model votes, falling back to simple signal")
+                signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
+            elif signal_type == 'flat' or confidence < 0.35:
                 print(f"  ⏭️  {symbol} {timeframe}: Ensemble → FLAT or low confidence ({confidence:.3f})")
                 return
-            
-            print(f"  📊 {symbol} {timeframe}: Ensemble ({num_models} models) → {signal_type.upper()} (conf: {confidence:.3f}, edge: {edge:.3f})")
+            if num_models > 0:
+                print(f"  📊 {symbol} {timeframe}: Ensemble ({num_models} models) → {signal_type.upper()} (conf: {confidence:.3f}, edge: {edge:.3f})")
         else:
             # Fallback to simple signal if ensemble unavailable
-            signal_type, confidence, edge = generate_simple_signal(df)
+            signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
             print(f"  ⚠️  {symbol} {timeframe}: Using fallback signal → {signal_type.upper()}")
         
         # Check sentiment filter
         sentiment = get_recent_sentiment(symbol)
-        if (signal_type == 'long' and sentiment < SENTIMENT_LONG_THRESHOLD):
-            print(f"  🚫 {symbol} {timeframe}: LONG filtered by sentiment ({sentiment:.3f} < {SENTIMENT_LONG_THRESHOLD})")
-            return
-        elif (signal_type == 'short' and sentiment > SENTIMENT_SHORT_THRESHOLD):
-            print(f"  🚫 {symbol} {timeframe}: SHORT filtered by sentiment ({sentiment:.3f} > {SENTIMENT_SHORT_THRESHOLD})")
-            return
-        elif sentiment != 0.0:
+        if abs(sentiment) > 1e-3:
+            if signal_type == 'long' and sentiment < SENTIMENT_LONG_THRESHOLD:
+                print(f"  🚫 {symbol} {timeframe}: LONG filtered by sentiment ({sentiment:.3f} < {SENTIMENT_LONG_THRESHOLD})")
+                return
+            if signal_type == 'short' and sentiment > SENTIMENT_SHORT_THRESHOLD:
+                print(f"  🚫 {symbol} {timeframe}: SHORT filtered by sentiment ({sentiment:.3f} > {SENTIMENT_SHORT_THRESHOLD})")
+                return
             print(f"  ✅ {symbol} {timeframe}: Sentiment OK ({sentiment:.3f})")
         
         # Calculate ATR for TP/SL
-        atr = float(df['atr'].iloc[-1])
+        atr = float(features_row['atr14'].iloc[-1])
         if pd.isna(atr) or atr == 0:
-            atr = float(df['close'].iloc[-1]) * 0.02
+            atr = float(raw_df['close'].iloc[-1]) * 0.02
         
         # Calculate TP/SL
-        entry_price = float(df['close'].iloc[-1])
+        entry_price = float(raw_df['close'].iloc[-1])
         params = SYMBOL_PARAMS.get(symbol, {}).get(timeframe, {'tp': 1.5, 'sl': 1.0})
         
         if signal_type == 'long':
