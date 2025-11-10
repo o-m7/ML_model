@@ -152,67 +152,44 @@ def get_recent_sentiment(symbol: str) -> float:
 
 
 def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
-    """Fetch OHLCV data from Polygon S3 flat files."""
+    """Fetch OHLCV data from Polygon REST API (PAID PLAN - REAL-TIME)."""
     ticker = TICKER_MAP.get(symbol, symbol)
     minutes = TIMEFRAME_MINUTES[timeframe]
     
-    # Fetch last N days from S3
-    days_to_fetch = max(10, (bars * minutes) // (24 * 60) + 5)  # Ensure enough days
-    end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=days_to_fetch)
+    end_time = datetime.now(timezone.utc)
+    start_time = end_time - timedelta(minutes=minutes * bars * 2)
     
-    all_bars = []
-    current_date = start_date
+    params = {
+        'adjusted': 'true',
+        'sort': 'asc',
+        'limit': 50000,
+        'apiKey': POLYGON_API_KEY
+    }
     
-    while current_date <= end_date:
-        # Skip weekends
-        if current_date.weekday() >= 5:
-            current_date += timedelta(days=1)
-            continue
+    multiplier = minutes
+    timespan = 'minute'
+    from_date = start_time.strftime('%Y-%m-%d')
+    to_date = end_time.strftime('%Y-%m-%d')
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
+    
+    try:
+        response = requests.get(url, params=params, timeout=30)
+        data = response.json()
         
-        year = current_date.strftime('%Y')
-        month = current_date.strftime('%m')
-        day_str = current_date.strftime('%Y-%m-%d')
-        s3_key = f'global_forex/minute_aggs_v1/{year}/{month}/{day_str}.csv.gz'
-        
-        try:
-            response = s3_client.get_object(Bucket=POLYGON_S3_BUCKET, Key=s3_key)
-            df_day = pd.read_csv(io.BytesIO(response['Body'].read()), compression='gzip')
+        if 'results' not in data or not data['results']:
+            return None
             
-            # Filter for symbol
-            df_day = df_day[df_day['ticker'] == ticker]
-            
-            if not df_day.empty:
-                # Convert timestamp
-                df_day['timestamp'] = pd.to_datetime(df_day['window_start'], utc=True)
-                df_day = df_day[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
-                all_bars.append(df_day)
-                
-        except s3_client.exceptions.NoSuchKey:
-            pass  # File doesn't exist, skip
-        except Exception:
-            pass  # Other error, skip
+        df = pd.DataFrame(data['results'])
+        df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
+        df = df.rename(columns={'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
+        df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
+        df = df.sort_index()
         
-        current_date += timedelta(days=1)
-    
-    if not all_bars:
+        return df.tail(bars)
+        
+    except Exception as e:
+        print(f"  ❌ Error fetching {symbol}: {e}")
         return None
-    
-    # Combine all days
-    result = pd.concat(all_bars).sort_index()
-    
-    # Resample to target timeframe if needed
-    if minutes > 1:
-        result = result.resample(f'{minutes}min').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
-    
-    # Return last N bars
-    return result.tail(bars)
 
 
 def generate_simple_signal(df):
