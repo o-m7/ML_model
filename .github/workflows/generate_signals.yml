@@ -25,7 +25,7 @@ jobs:
         run: python3 -m pip install requests pandas numpy
         
       - name: Install additional packages
-        run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn lightgbm boto3
+        run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn lightgbm
         
       - name: Verify installation
         run: |
@@ -42,4 +42,8 @@ jobs:
         run: |
           echo "=== Starting standalone signal generator ==="
           ls -la signal_generator.py
+          echo "=== Checking environment variables ==="
+          echo "POLYGON_API_KEY: ${POLYGON_API_KEY:0:10}..."
+          echo "SUPABASE_URL: ${SUPABASE_URL}"
+          echo "SUPABASE_KEY: ${SUPABASE_KEY:0:10}..."
           python3 signal_generator.py
