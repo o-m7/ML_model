@@ -2,11 +2,7 @@ name: Generate Trading Signals
 
 on:
   schedule:
-<<<<<<< HEAD
-    - cron: '*/1 * * * *'
-=======
     - cron: '* * * * *'
->>>>>>> 05d24ad (Ensure scheduled signals always produce trade entries)
   workflow_dispatch:
 
 jobs:
