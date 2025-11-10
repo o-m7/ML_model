@@ -153,7 +153,7 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
             return None
             
         df = pd.DataFrame(data['results'])
-        df['timestamp'] = pd.to_datetime(df['t'], unit='ms')
+        df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
         df = df.rename(columns={'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
         df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
         df = df.sort_index()
