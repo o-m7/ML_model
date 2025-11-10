@@ -1,0 +1,51 @@
+name: Continuous Signal Worker
+
+on:
+  schedule:
+    # Kick off once per hour
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: continuous-signal-worker
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  continuous-signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 380  # just over 6 hours per run
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install requests pandas numpy pandas-ta scikit-learn lightgbm supabase python-dotenv
+
+      - name: Run signal generator every minute
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "===== Continuous signal loop started at $(date -u) UTC ====="
+          for i in $(seq 1 60); do
+            echo ""
+            echo ">>> Iteration $i at $(date -u) UTC"
+            python3 generate_signals_standalone.py || echo "⚠️ Signal run failed (iteration $i)"
+            if [ $i -lt 60 ]; then
+              sleep 60
+            fi
+          done
+          echo "===== Continuous signal loop ended at $(date -u) UTC ====="
+
