@@ -45,19 +45,14 @@ POLYGON_S3_BUCKET = os.getenv('POLYGON_S3_BUCKET')
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
-if not all([SUPABASE_URL, SUPABASE_KEY, POLYGON_S3_ACCESS_KEY, POLYGON_S3_SECRET_KEY]):
+if not all([POLYGON_API_KEY, SUPABASE_URL, SUPABASE_KEY]):
     print("❌ Missing required environment variables!")
+    print(f"   POLYGON_API_KEY: {'✅' if POLYGON_API_KEY else '❌'}")
+    print(f"   SUPABASE_URL: {'✅' if SUPABASE_URL else '❌'}")
+    print(f"   SUPABASE_KEY: {'✅' if SUPABASE_KEY else '❌'}")
     sys.exit(1)
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# Initialize S3 client for Polygon flat files
-s3_client = boto3.client(
-    's3',
-    aws_access_key_id=POLYGON_S3_ACCESS_KEY,
-    aws_secret_access_key=POLYGON_S3_SECRET_KEY,
-    endpoint_url=POLYGON_S3_ENDPOINT
-)
 
 # Models to process (from your production system)
 # NOTE: 4H timeframes temporarily disabled - Polygon REST API doesn't provide real-time 4H forex data
