@@ -171,7 +171,24 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
         df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
         df = df.sort_index()
         
-        return df.tail(bars)
+        result = df.tail(bars)
+        latest_ts = result.index[-1] if not result.empty else None
+        if latest_ts is not None and datetime.now(timezone.utc) - latest_ts > timedelta(days=1):
+            # Retry using descending sort to fetch the most recent bars allowed by the key
+            params['sort'] = 'desc'
+            try:
+                response = requests.get(url, params=params, timeout=30)
+                data = response.json()
+                if data.get('status') == 'OK' and data.get('results'):
+                    df = pd.DataFrame(data['results'])
+                    df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
+                    df = df.rename(columns={'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
+                    df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].sort_values('timestamp').set_index('timestamp')
+                    result = df.tail(bars)
+            except Exception:
+                pass
+        
+        return result
     except Exception as e:
         print(f"  ❌ Error fetching {symbol}: {e}")
         return None
@@ -203,30 +220,30 @@ def process_symbol(symbol, timeframe):
         if blackout_result['is_blackout']:
             print(f"  🚫 {symbol} {timeframe}: BLACKOUT - {blackout_result['reason']}")
             return
-        
+
         # Fetch raw data
-    raw_df = fetch_polygon_data(symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200))
+        raw_df = fetch_polygon_data(symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200))
         min_bars = MIN_BARS_REQUIRED.get(timeframe, 120)
         if raw_df is None or len(raw_df) < min_bars:
             got = 0 if raw_df is None else len(raw_df)
             print(f"  ⚠️  {symbol} {timeframe}: Insufficient data (have {got} < {min_bars} bars)")
             return
-        
+
         last_bar_time = raw_df.index[-1]
         staleness = datetime.now(timezone.utc) - last_bar_time
         max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
         if staleness > max_allowed:
             print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")
             return
-        
+
         # Build feature set aligned with production models
         feature_df = build_feature_frame(raw_df)
         if feature_df.empty:
             print(f"  ⚠️  {symbol} {timeframe}: Unable to build feature set (insufficient history or NaNs)")
             return
-        
+
         features_row = feature_df.tail(1)
-        
+
         # Get ensemble predictor for this symbol
         ensemble = get_ensemble(symbol)
         required_features = set()
@@ -237,16 +254,15 @@ def process_symbol(symbol, timeframe):
         if missing_features:
             print(f"  ⚠️  {symbol} {timeframe}: Missing model features {sorted(missing_features)[:10]}... using fallback")
             ensemble = None
-        
+
         if ensemble:
             # Use ensemble prediction
             ensemble_result = ensemble.ensemble_predict(features_row, strategy='performance_weighted')
-            
             signal_type = ensemble_result['signal']
             confidence = ensemble_result['confidence']
             edge = ensemble_result['edge']
             num_models = ensemble_result['num_models']
-            
+
             if num_models == 0 or signal_type == 'flat' or confidence < 0.35:
                 reason = "no model votes" if num_models == 0 else f"conf {confidence:.3f}"
                 print(f"  ⚠️  {symbol} {timeframe}: Ensemble fallback triggered ({reason})")
@@ -260,7 +276,7 @@ def process_symbol(symbol, timeframe):
             signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
             print(f"  ⚠️  {symbol} {timeframe}: Using fallback signal → {signal_type.upper()}")
             source = 'fallback'
-        
+
         # Check sentiment filter
         sentiment = get_recent_sentiment(symbol)
         if abs(sentiment) > 1e-3:
@@ -271,23 +287,23 @@ def process_symbol(symbol, timeframe):
                 print(f"  🚫 {symbol} {timeframe}: SHORT filtered by sentiment ({sentiment:.3f} > {SENTIMENT_SHORT_THRESHOLD})")
                 return
             print(f"  ✅ {symbol} {timeframe}: Sentiment OK ({sentiment:.3f})")
-        
+
         # Calculate ATR for TP/SL
         atr = float(features_row['atr14'].iloc[-1])
         if pd.isna(atr) or atr == 0:
             atr = float(raw_df['close'].iloc[-1]) * 0.02
-        
+
         # Calculate TP/SL
         entry_price = float(raw_df['close'].iloc[-1])
         params = SYMBOL_PARAMS.get(symbol, {}).get(timeframe, {'tp': 1.5, 'sl': 1.0})
-        
+
         if signal_type == 'long':
             tp_price = entry_price + (atr * params['tp'])
             sl_price = entry_price - (atr * params['sl'])
         else:
             tp_price = entry_price - (atr * params['tp'])
             sl_price = entry_price + (atr * params['sl'])
-        
+
         # Store in Supabase
         supabase_payload = {
             'symbol': symbol,
@@ -303,9 +319,8 @@ def process_symbol(symbol, timeframe):
             'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
         }
         supabase.table('live_signals').insert(supabase_payload).execute()
-        
+
         print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {entry_price:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
-        
     except Exception as e:
         print(f"  ❌ Error processing {symbol} {timeframe}: {e}")
 
