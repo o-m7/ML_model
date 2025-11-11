@@ -7,17 +7,23 @@ import os
 import sys
 from pathlib import Path
 import pickle
-from dotenv import load_dotenv
 from supabase import create_client
 
-load_dotenv()
+# Try to load .env if it exists (local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except:
+    pass  # Railway injects env vars directly
 
 SUPABASE_URL = os.getenv('SUPABASE_URL')
 SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 
 if not all([SUPABASE_URL, SUPABASE_KEY]):
     print("❌ Missing SUPABASE_URL or SUPABASE_KEY")
-    sys.exit(1)
+    print(f"SUPABASE_URL present: {bool(SUPABASE_URL)}")
+    print(f"SUPABASE_KEY present: {bool(SUPABASE_KEY)}")
+    sys.exit(0)  # Don't fail deployment, just skip model download
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
