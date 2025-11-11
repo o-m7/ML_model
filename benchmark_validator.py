@@ -10,10 +10,10 @@ class BenchmarkValidator:
     """Validates model performance against production benchmarks"""
     
     # Production benchmarks - STRICT REQUIREMENTS
-    MIN_PROFIT_FACTOR = 1.6   # ⚠️ STRICT: Only elite models (was 1.05)
-    MAX_DRAWDOWN_PCT = 6.0    # ⚠️ STRICT: Tight risk control (was 7.5%)
-    MIN_SHARPE = 0.05         # Keep same
-    MIN_WIN_RATE = 45.0       # ⚠️ STRICT: High win rate required (was 39%)
+    MIN_PROFIT_FACTOR = 1.6   # ⚠️ STRICT: Only elite models
+    MAX_DRAWDOWN_PCT = 6.0    # ⚠️ STRICT: Tight risk control
+    MIN_SHARPE = 1.0          # ⚠️ STRICT: Excellent risk-adjusted returns
+    MIN_WIN_RATE = 45.0       # ⚠️ STRICT: High win rate required
     
     MIN_TRADES_BY_TF = {
         "5T": 200,

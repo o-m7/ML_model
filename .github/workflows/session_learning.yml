@@ -1,0 +1,109 @@
+name: Session-Based Learning
+
+on:
+  schedule:
+    # Run every 4 hours (after each trading session)
+    # At 04:00, 08:00, 12:00, 16:00, 20:00, 00:00 UTC
+    - cron: '0 */4 * * *'
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  learn_from_session:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --no-cache-dir \
+            requests pandas numpy python-dotenv supabase \
+            pandas-ta scikit-learn lightgbm pyarrow fastparquet
+      
+      - name: Download production models
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          workflow: weekly_retraining.yml
+          name: production-models
+          path: models_production
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          if_no_artifact_found: warn
+      
+      - name: Download feature store
+        uses: dawidd6/action-download-artifact@v3
+        continue-on-error: true
+        with:
+          workflow: weekly_retraining.yml
+          name: feature-store-data
+          path: feature_store
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          if_no_artifact_found: warn
+      
+      - name: Run continuous learning
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "🤖 Running session-based learning..."
+          python3 continuous_learning.py
+      
+      - name: Upload learning data
+        if: success()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: learning-data-${{ github.run_number }}
+          path: live_trades/
+          retention-days: 30
+      
+      - name: Upload updated models
+        if: success()
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: production-models
+          path: models_production/
+          retention-days: 90
+      
+      - name: Commit model improvements
+        if: success()
+        continue-on-error: true
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          if [[ -n $(git status --porcelain models_production/) ]]; then
+            git add models_production/
+            git commit -m "🧠 Session learning: Improved models from recent trades [skip ci]"
+            git push
+            echo "✅ Models updated and pushed"
+          else
+            echo "ℹ️  No model changes to commit"
+          fi
+      
+      - name: Session summary
+        if: always()
+        run: |
+          echo ""
+          echo "=================================="
+          echo "Session Learning Summary"
+          echo "=================================="
+          echo "Timestamp: $(date)"
+          echo "Status: ${{ job.status }}"
+          echo "=================================="
+
