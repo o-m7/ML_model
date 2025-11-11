@@ -59,9 +59,11 @@ Expected:
 | Issue | Solution |
 |-------|----------|
 | ❌ pandas-ta==0.3.14b not found | ✅ Changed to `pandas-ta>=0.3.14b` |
+| ❌ FastAPI/uvicorn missing | ✅ Added to requirements.txt |
 | ❌ No web service in Procfile | ✅ Added `web: bash railway_start.sh` |
 | ❌ Models not in repo | ✅ Auto-download from Supabase |
 | ❌ No startup script | ✅ Created `railway_start.sh` |
+| ❌ Healthcheck failing | ✅ Fixed with FastAPI + better startup |
 
 ---
 
