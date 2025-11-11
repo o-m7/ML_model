@@ -101,11 +101,11 @@ class ProductionConfig:
     MAX_BARS_IN_TRADE = 60
     MAX_DRAWDOWN_CIRCUIT_BREAKER = 0.07  # 7% (was 15%)
     
-    # Benchmarks (REALISTIC for production)
-    MIN_PROFIT_FACTOR = 1.05   # Relaxed - some 4H at 1.05-1.31
-    MAX_DRAWDOWN_PCT = 7.5     # Realistic with 7% circuit breaker
-    MIN_SHARPE = 0.05          # Relaxed for 4H timeframes  
-    MIN_WIN_RATE = 39.0        # Relaxed - 4H timeframes naturally lower
+    # Benchmarks (STRICT ELITE REQUIREMENTS)
+    MIN_PROFIT_FACTOR = 1.6    # ⚠️ STRICT: Only elite models pass
+    MAX_DRAWDOWN_PCT = 6.0     # ⚠️ STRICT: Tight risk control
+    MIN_SHARPE = 1.0           # ⚠️ STRICT: Excellent risk-adjusted returns
+    MIN_WIN_RATE = 45.0        # ⚠️ STRICT: High win rate required
     
     MIN_TRADES_BY_TF = {
         '5T': 100,   # Higher frequency = more trades expected
