@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
 Fetch historical forex data from Polygon S3 flat files.
+Uses boto3 to access S3-compatible storage at files.massive.com.
 """
 
 import os
 import sys
 import boto3
 import pandas as pd
-from datetime import datetime, timedelta, timezone
+import gzip
+from datetime import datetime, timedelta
 from pathlib import Path
 from dotenv import load_dotenv
-import io
+from io import BytesIO
 
 load_dotenv()
 
@@ -21,7 +23,7 @@ S3_ENDPOINT = os.getenv('POLYGON_S3_ENDPOINT')
 S3_BUCKET = os.getenv('POLYGON_S3_BUCKET')
 
 if not all([S3_ACCESS_KEY, S3_SECRET_KEY, S3_ENDPOINT, S3_BUCKET]):
-    print("❌ Missing S3 credentials in .env!")
+    print("❌ Missing S3 credentials in .env file!")
     sys.exit(1)
 
 # Initialize S3 client
@@ -32,21 +34,32 @@ s3_client = boto3.client(
     endpoint_url=S3_ENDPOINT
 )
 
+# Polygon ticker mapping
+TICKER_MAP = {
+    'EURUSD': 'C:EURUSD',
+    'GBPUSD': 'C:GBPUSD',
+    'AUDUSD': 'C:AUDUSD',
+    'NZDUSD': 'C:NZDUSD',
+    'XAUUSD': 'C:XAUUSD',
+    'XAGUSD': 'C:XAGUSD',
+}
+
+OUTPUT_DIR = Path(__file__).parent / 'polygon_data'
+OUTPUT_DIR.mkdir(exist_ok=True)
+
 
 def list_available_files(prefix='us_forex'):
-    """List available files in S3 bucket."""
+    """List available files in the S3 bucket."""
     try:
         response = s3_client.list_objects_v2(
             Bucket=S3_BUCKET,
             Prefix=prefix,
-            MaxKeys=20
+            MaxKeys=100
         )
         
         if 'Contents' in response:
             files = [obj['Key'] for obj in response['Contents']]
             print(f"✅ Found {len(files)} files with prefix '{prefix}'")
-            for f in files[:10]:
-                print(f"   - {f}")
             return files
         else:
             print(f"⚠️  No files found with prefix '{prefix}'")
@@ -56,97 +69,135 @@ def list_available_files(prefix='us_forex'):
         return []
 
 
-def fetch_forex_bars_from_s3(symbol: str, timeframe: str, days_back: int = 30):
+def fetch_file_from_s3(file_key: str) -> pd.DataFrame:
     """
-    Fetch and aggregate forex data from Polygon S3.
+    Fetch and parse a gzipped CSV file from S3.
     
     Args:
-        symbol: Symbol like 'EURUSD', 'XAUUSD'
-        timeframe: '5T', '15T', '30T', '1H', '4H'
-        days_back: Number of days to fetch
+        file_key: S3 object key (e.g., 'us_forex_quotes/2025/11/2025-11-08.csv.gz')
     
     Returns:
-        DataFrame with OHLCV data
+        DataFrame with the file contents
     """
+    try:
+        print(f"  Fetching: {file_key}")
+        
+        # Download from S3
+        response = s3_client.get_object(Bucket=S3_BUCKET, Key=file_key)
+        
+        # Read and decompress
+        compressed_data = response['Body'].read()
+        
+        with gzip.GzipFile(fileobj=BytesIO(compressed_data)) as gz:
+            df = pd.read_csv(gz)
+        
+        print(f"  ✅ Got {len(df):,} rows")
+        return df
+        
+    except s3_client.exceptions.NoSuchKey:
+        print(f"  ⚠️  File not found: {file_key}")
+        return pd.DataFrame()
+    except Exception as e:
+        print(f"  ❌ Error: {e}")
+        return pd.DataFrame()
+
+
+def aggregate_to_bars(df: pd.DataFrame, timeframe: str, symbol: str) -> pd.DataFrame:
+    """
+    Convert tick/quote data to OHLCV bars.
+    
+    Args:
+        df: Raw tick data
+        timeframe: '5T', '15T', '30T', '1H', '4H'
+        symbol: e.g., 'C:EURUSD'
+    
+    Returns:
+        OHLCV DataFrame
+    """
+    if df.empty:
+        return pd.DataFrame()
+    
+    # Filter for specific symbol if present
+    if 'ticker' in df.columns:
+        df = df[df['ticker'] == symbol].copy()
+    
+    if df.empty:
+        print(f"  ⚠️  No data for {symbol} in this file")
+        return pd.DataFrame()
+    
+    # Convert timestamp to datetime (Polygon uses nanoseconds)
+    if 'sip_timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['sip_timestamp'], unit='ns', utc=True)
+    elif 'timestamp' in df.columns:
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ns', utc=True)
+    else:
+        print(f"  ❌ No timestamp column found. Columns: {df.columns.tolist()}")
+        return pd.DataFrame()
+    
+    df = df.set_index('timestamp').sort_index()
+    
+    # Determine price column (bid/ask midpoint is most accurate for forex)
+    if 'bid_price' in df.columns and 'ask_price' in df.columns:
+        df['price'] = (df['bid_price'] + df['ask_price']) / 2
+    elif 'price' in df.columns:
+        df['price'] = df['price']
+    else:
+        print(f"  ❌ No price columns found. Columns: {df.columns.tolist()}")
+        return pd.DataFrame()
+    
+    # Aggregate to timeframe
+    ohlcv = df.resample(timeframe).agg({
+        'price': ['first', 'max', 'min', 'last', 'count']
+    })
+    
+    ohlcv.columns = ['open', 'high', 'low', 'close', 'volume']
+    ohlcv = ohlcv.dropna()
+    
+    return ohlcv
+
+
+def fetch_historical_data(symbol: str, timeframe: str, days_back: int = 30):
+    """
+    Fetch historical data for a symbol and aggregate to specified timeframe.
+    
+    Args:
+        symbol: e.g., 'EURUSD', 'XAUUSD'
+        timeframe: '5T', '15T', '30T', '1H', '4H'
+        days_back: Number of days of historical data to fetch
+    
+    Returns:
+        OHLCV DataFrame
+    """
+    polygon_ticker = TICKER_MAP.get(symbol, f'C:{symbol}')
+    
     print(f"\n{'='*80}")
-    print(f"Fetching {symbol} {timeframe} from S3 (last {days_back} days)")
+    print(f"Fetching {symbol} ({polygon_ticker}) - {timeframe} - Last {days_back} days")
     print(f"{'='*80}\n")
     
-    # Map symbol to Polygon format
-    if not symbol.startswith('C:'):
-        symbol = f'C:{symbol}'
-    
-    timeframe_map = {
-        '5T': 5,
-        '15T': 15,
-        '30T': 30,
-        '1H': 60,
-        '4H': 240
-    }
-    
-    minutes = timeframe_map.get(timeframe, 60)
-    
-    # Try to find pre-aggregated minute bars first
-    # Polygon flat files structure: us_forex_aggs/YYYY/MM/YYYY-MM-DD.csv.gz
-    end_date = datetime.now(timezone.utc)
+    all_bars = []
+    end_date = datetime.now()
     start_date = end_date - timedelta(days=days_back)
     
-    all_bars = []
     current_date = start_date
-    
     while current_date <= end_date:
         # Skip weekends
         if current_date.weekday() >= 5:
             current_date += timedelta(days=1)
             continue
         
+        # Construct S3 key (check both quotes and aggregates)
         year = current_date.strftime('%Y')
         month = current_date.strftime('%m')
-        day_str = current_date.strftime('%Y-%m-%d')
+        date_str = current_date.strftime('%Y-%m-%d')
         
-        # Try minute aggregates first
-        s3_key = f'us_forex_aggs/{year}/{month}/{day_str}.csv.gz'
+        # Try quotes first (tick data)
+        file_key = f'us_forex_quotes/{year}/{month}/{date_str}.csv.gz'
+        df_day = fetch_file_from_s3(file_key)
         
-        try:
-            print(f"  Fetching {day_str}...", end=' ')
-            response = s3_client.get_object(Bucket=S3_BUCKET, Key=s3_key)
-            
-            # Read gzipped CSV
-            df = pd.read_csv(io.BytesIO(response['Body'].read()), compression='gzip')
-            
-            # Filter for symbol
-            if 'ticker' in df.columns:
-                df = df[df['ticker'] == symbol]
-            
-            if not df.empty:
-                # Convert timestamp
-                if 'window_start' in df.columns:
-                    df['timestamp'] = pd.to_datetime(df['window_start'], utc=True)
-                elif 't' in df.columns:
-                    df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
-                
-                # Standardize column names
-                col_map = {
-                    'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume',
-                    'open': 'open', 'high': 'high', 'low': 'low', 'close': 'close', 'volume': 'volume'
-                }
-                df = df.rename(columns=col_map)
-                
-                # Keep only OHLCV
-                required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-                if all(col in df.columns for col in required_cols):
-                    df = df[required_cols].set_index('timestamp')
-                    all_bars.append(df)
-                    print(f"✅ {len(df)} bars")
-                else:
-                    print(f"⚠️  Missing columns: {df.columns.tolist()}")
-            else:
-                print("⚠️  No data for symbol")
-                
-        except s3_client.exceptions.NoSuchKey:
-            print("⚠️  File not found")
-        except Exception as e:
-            print(f"❌ Error: {e}")
+        if not df_day.empty:
+            bars = aggregate_to_bars(df_day, timeframe, polygon_ticker)
+            if not bars.empty:
+                all_bars.append(bars)
         
         current_date += timedelta(days=1)
     
@@ -156,38 +207,48 @@ def fetch_forex_bars_from_s3(symbol: str, timeframe: str, days_back: int = 30):
     
     # Combine all days
     result = pd.concat(all_bars).sort_index()
+    result = result[~result.index.duplicated(keep='last')]  # Remove duplicates
     
-    # Resample to target timeframe if needed
-    if minutes > 1:
-        print(f"\n  Resampling to {timeframe}...")
-        result = result.resample(f'{minutes}min').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
+    # Save to parquet
+    output_file = OUTPUT_DIR / f"{symbol}_{timeframe}.parquet"
+    result.to_parquet(output_file)
     
-    print(f"\n✅ Total: {len(result)} bars")
-    print(f"   Range: {result.index.min()} to {result.index.max()}")
+    print(f"\n✅ SUCCESS!")
+    print(f"   Bars fetched: {len(result):,}")
+    print(f"   Date range: {result.index.min()} to {result.index.max()}")
+    print(f"   Saved to: {output_file}")
     
     return result
 
 
-if __name__ == "__main__":
-    # Test S3 access
-    print("Testing Polygon S3 access...\n")
+def main():
+    """Test the S3 fetcher."""
+    print("="*80)
+    print("POLYGON S3 FLAT FILE DATA FETCHER")
+    print("="*80)
     
-    # List available files
-    list_available_files('us_forex_aggs')
+    # First, list available files to verify access
+    print("\nChecking S3 access...")
+    files = list_available_files('us_forex_quotes/2025/11')
     
-    # Try to fetch EURUSD 1H data
-    df = fetch_forex_bars_from_s3('EURUSD', '1H', days_back=7)
+    if files:
+        print(f"\nSample files:")
+        for f in files[:5]:
+            print(f"  - {f}")
+    
+    # Fetch data for EURUSD 1H (last 7 days)
+    print("\n" + "="*80)
+    print("FETCHING TEST DATA: EURUSD 1H")
+    print("="*80)
+    
+    df = fetch_historical_data('EURUSD', '1H', days_back=7)
     
     if not df.empty:
-        print("\n✅ S3 access working!")
-        print("\nSample data:")
-        print(df.tail())
-    else:
-        print("\n❌ S3 access failed or no data available")
+        print("\n" + "="*80)
+        print("SAMPLE DATA:")
+        print("="*80)
+        print(df.tail(10))
 
+
+if __name__ == "__main__":
+    main()
