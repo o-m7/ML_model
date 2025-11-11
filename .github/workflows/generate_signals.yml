@@ -2,7 +2,7 @@ name: Generate Trading Signals
 
 on:
   schedule:
-    - cron: '* * * * *'
+    - cron: '*5/* * * *'
   workflow_dispatch:
 
 jobs:
