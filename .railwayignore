@@ -1,0 +1,15 @@
+# Railway should include these
+!models_production/
+!models_onnx/
+!feature_store/
+
+# But ignore these
+.venv/
+.venv312/
+__pycache__/
+*.pyc
+.git/
+.github/
+*.log
+.DS_Store
+
