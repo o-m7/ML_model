@@ -24,13 +24,22 @@ from market_costs import get_costs, get_tp_sl, apply_entry_costs, apply_exit_cos
 
 
 def load_model(symbol: str, timeframe: str) -> dict:
-    """Load production model."""
-    model_path = Path(f"models_production/{symbol}/{symbol}_{timeframe}_PRODUCTION_READY.pkl")
+    """Load trained model (checks rentec → production → fast)."""
+    # Try models_rentec first (Renaissance system - best)
+    model_path = Path(f"models_rentec/{symbol}/{symbol}_{timeframe}.pkl")
 
     if not model_path.exists():
-        raise FileNotFoundError(f"Model not found: {model_path}")
+        # Fallback to production models
+        model_path = Path(f"models_production/{symbol}/{symbol}_{timeframe}_PRODUCTION_READY.pkl")
 
-    print(f"📦 Loading model: {model_path.name}")
+    if not model_path.exists():
+        # Fallback to fast models
+        model_path = Path(f"models_fast/{symbol}/{symbol}_{timeframe}.pkl")
+
+    if not model_path.exists():
+        raise FileNotFoundError(f"No model found for {symbol} {timeframe} in models_rentec/, models_production/, or models_fast/")
+
+    print(f"📦 Loading model: {model_path}")
     with open(model_path, 'rb') as f:
         return pickle.load(f)
 
