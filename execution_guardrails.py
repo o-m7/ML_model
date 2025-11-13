@@ -59,6 +59,8 @@ class ExecutionGuardrails:
         """
         Check if data is stale.
 
+        For forex markets (24/5), accounts for weekend gaps and daily rollover.
+
         Args:
             last_bar_time: Timestamp of last bar
             timeframe_minutes: Bar timeframe in minutes
@@ -72,8 +74,17 @@ class ExecutionGuardrails:
 
         age_seconds = (now - last_bar_time).total_seconds()
 
-        # Allow 2x timeframe + fixed buffer
-        max_allowed_age = (timeframe_minutes * 60 * 2) + self.max_data_age_seconds
+        # For forex: Allow larger gaps on weekends and during rollover (10-11pm UTC)
+        # Forex markets close Friday 10pm UTC, reopen Sunday 10pm UTC
+        is_weekend = now.weekday() >= 5  # Saturday=5, Sunday=6
+        is_monday_morning = now.weekday() == 0 and now.hour < 2  # Monday before 2am UTC
+
+        if is_weekend or is_monday_morning:
+            # During weekend, allow up to 72 hours staleness
+            max_allowed_age = 72 * 3600
+        else:
+            # During trading week: 2x timeframe + buffer (but min 30 minutes)
+            max_allowed_age = max(1800, (timeframe_minutes * 60 * 2) + self.max_data_age_seconds)
 
         if age_seconds > max_allowed_age:
             return GuardrailResult(
