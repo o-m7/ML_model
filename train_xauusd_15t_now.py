@@ -225,6 +225,20 @@ def train_model(df):
     X = df[feature_cols].values
     y = df['target'].values
 
+    # Check unique classes
+    unique_classes = np.unique(y)
+    print(f"   Unique classes in data: {unique_classes}")
+
+    # If we don't have class 0 (Flat), remap classes to be consecutive from 0
+    if 0 not in unique_classes:
+        print(f"   ⚠️  No Flat (0) labels found. Remapping classes...")
+        # Map: 1 -> 0 (Up), 2 -> 1 (Down)
+        y = np.where(y == 1, 0, 1)
+        class_names = ['Up', 'Down']
+        print(f"   Remapped to binary: Up=0, Down=1")
+    else:
+        class_names = ['Flat', 'Up', 'Down']
+
     # Split: 80% train, 20% test
     split_idx = int(len(X) * 0.8)
     X_train, X_test = X[:split_idx], X[split_idx:]
@@ -234,16 +248,35 @@ def train_model(df):
     print(f"   Test:  {len(X_test):,} samples")
 
     # Train
-    model = xgb.XGBClassifier(
-        n_estimators=300,
-        max_depth=6,
-        learning_rate=0.05,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1,
-        verbosity=0
-    )
+    num_classes = len(np.unique(y_train))
+
+    if num_classes == 2:
+        # Binary classification
+        model = xgb.XGBClassifier(
+            objective='binary:logistic',
+            n_estimators=300,
+            max_depth=6,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=0
+        )
+    else:
+        # Multi-class classification
+        model = xgb.XGBClassifier(
+            objective='multi:softprob',
+            num_class=num_classes,
+            n_estimators=300,
+            max_depth=6,
+            learning_rate=0.05,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            random_state=42,
+            n_jobs=-1,
+            verbosity=0
+        )
 
     model.fit(X_train, y_train)
 
@@ -252,7 +285,7 @@ def train_model(df):
     y_proba = model.predict_proba(X_test)
 
     print("\n📊 Test Set Performance:")
-    print(classification_report(y_test, y_pred, target_names=['Flat', 'Up', 'Down']))
+    print(classification_report(y_test, y_pred, target_names=class_names))
 
     # Save model
     model_dir = Path("models_rentec") / SYMBOL
@@ -264,12 +297,14 @@ def train_model(df):
         pickle.dump({
             'model': model,
             'features': feature_cols,
+            'class_names': class_names,
             'metadata': {
                 'symbol': SYMBOL,
                 'timeframe': TIMEFRAME,
                 'trained_at': datetime.now(timezone.utc).isoformat(),
                 'train_samples': len(X_train),
                 'test_samples': len(X_test),
+                'num_classes': num_classes,
                 'entry_method': 'next_bar_open_FIXED'
             }
         }, f)
