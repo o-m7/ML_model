@@ -5,11 +5,13 @@ LIVE GUARDRAILS TEST - WITH REAL POLYGON DATA
 
 Demonstrates execution guardrails using LIVE data from Polygon REST API.
 
-This shows:
-- Real-time data fetching from Polygon
-- ATR calculation on live bars
-- Guardrail checks on actual market conditions
-- Current spread and volatility
+This fetches 50,000 bars (default) for accurate pattern detection and feature calculation.
+
+Features:
+- Fetches 50,000 bars of historical + real-time data from Polygon
+- Calculates ATR and other indicators on live market data
+- Runs all 6 execution guardrail checks on actual market conditions
+- Shows current spread, volatility, and data staleness
 
 Usage:
     python test_guardrails_live.py --api-key YOUR_API_KEY
@@ -17,6 +19,8 @@ Usage:
     python test_guardrails_live.py --symbol XAGUSD --tf 5T  # Uses .env file
 
 Get your free API key at: https://polygon.io/
+
+Note: Free tier limited to 5 API calls/minute. Consider Premium for unlimited calls.
 """
 
 import argparse
@@ -58,14 +62,14 @@ TIMEFRAME_MINUTES = {
 }
 
 
-def fetch_live_data(symbol: str, timeframe: str, bars: int = 50):
+def fetch_live_data(symbol: str, timeframe: str, bars: int = 50000):
     """
     Fetch live data from Polygon REST API.
 
     Args:
         symbol: Trading symbol (XAUUSD, XAGUSD, etc.)
         timeframe: Timeframe (5T, 15T, 30T, 1H, 4H)
-        bars: Number of bars to fetch
+        bars: Number of bars to fetch (default: 50,000 for pattern detection)
 
     Returns:
         DataFrame with OHLCV data
@@ -77,9 +81,11 @@ def fetch_live_data(symbol: str, timeframe: str, bars: int = 50):
     minutes = TIMEFRAME_MINUTES[timeframe]
 
     # Calculate date range
+    # 50,000 bars needs ~60-90 days depending on timeframe (accounting for weekends/holidays)
     from datetime import timedelta
     end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(minutes=minutes * bars * 2)  # Extra buffer
+    days_needed = max(60, int(bars * minutes / (60 * 24)) + 30)  # Extra buffer for market gaps
+    start_time = end_time - timedelta(days=days_needed)
 
     # Build API request
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{minutes}/minute"
@@ -88,16 +94,17 @@ def fetch_live_data(symbol: str, timeframe: str, bars: int = 50):
     params = {
         'adjusted': 'true',
         'sort': 'desc',
-        'limit': bars,
+        'limit': min(bars, 50000),  # Polygon API max is 50,000
         'apiKey': POLYGON_API_KEY
     }
 
     print(f"📡 Fetching live {symbol} data from Polygon...")
     print(f"   Timeframe: {timeframe} ({minutes} minutes)")
-    print(f"   Requesting {bars} bars")
+    print(f"   Requesting {bars} bars (~{bars*minutes/1440:.1f} trading days)")
+    print(f"   Date range: {start_time.date()} to {end_time.date()}")
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, timeout=30)  # Increased timeout for large requests
         response.raise_for_status()
         data = response.json()
 
@@ -122,8 +129,13 @@ def fetch_live_data(symbol: str, timeframe: str, bars: int = 50):
         df = df.sort_values('timestamp').reset_index(drop=True)
 
         print(f"✅ Received {len(df)} bars")
+        print(f"   First bar: {df.iloc[0]['timestamp']}")
         print(f"   Latest bar: {df.iloc[-1]['timestamp']}")
         print(f"   Current price: ${df.iloc[-1]['close']:.2f}")
+
+        # Calculate data span
+        data_span_days = (df.iloc[-1]['timestamp'] - df.iloc[0]['timestamp']).days
+        print(f"   Data span: {data_span_days} days ({len(df)} bars)")
 
         return df
 
