@@ -435,7 +435,7 @@ def main():
     parser = argparse.ArgumentParser(description='Validate backtest with realistic costs')
     parser.add_argument('--symbol', type=str, required=True, help='Symbol (XAUUSD, XAGUSD, etc.)')
     parser.add_argument('--tf', type=str, required=True, help='Timeframe (5T, 15T, 30T, 1H, 4H)')
-    parser.add_argument('--confidence', type=float, default=0.55, help='Confidence threshold')
+    parser.add_argument('--confidence', type=float, default=0.55, help='Confidence threshold (default: 0.55, try 0.65-0.70 to reduce trades)')
 
     args = parser.parse_args()
 
