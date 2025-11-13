@@ -4,6 +4,8 @@ STANDALONE SIGNAL GENERATOR FOR GITHUB ACTIONS
 ================================================
 Generates signals without needing the API server running.
 Uses ensemble predictions from multiple models.
+
+IMPORTANT: Fixed to use unified cost model and execution guardrails
 """
 
 import os
@@ -25,6 +27,10 @@ from ensemble_predictor import EnsemblePredictor
 from news_filter import is_in_blackout_window
 from production_final_system import BalancedModel
 from live_feature_utils import build_feature_frame
+
+# Import unified cost model and guardrails
+from market_costs import get_tp_sl, apply_entry_costs, calculate_tp_sl_prices, get_costs
+from execution_guardrails import get_moderate_guardrails
 
 # Ensure BalancedModel is available for pickle when this script runs as __main__
 _main_module = sys.modules.get("__main__")
@@ -73,15 +79,8 @@ TICKER_MAP = {
     'NZDUSD': 'C:NZDUSD',
 }
 
-# TP/SL Parameters
-SYMBOL_PARAMS = {
-    'XAUUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.6, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
-    'XAGUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
-    'EURUSD': {'5T': {'tp': 1.2, 'sl': 1.0}, '15T': {'tp': 1.4, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
-    'GBPUSD': {'5T': {'tp': 1.5, 'sl': 1.0}, '15T': {'tp': 1.6, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
-    'AUDUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
-    'NZDUSD': {'5T': {'tp': 1.4, 'sl': 1.0}, '15T': {'tp': 1.5, 'sl': 1.0}, '30T': {'tp': 2.0, 'sl': 1.0}, '1H': {'tp': 2.2, 'sl': 1.0}, '4H': {'tp': 2.5, 'sl': 1.0}},
-}
+# TP/SL Parameters now unified in market_costs.py
+# Old hardcoded SYMBOL_PARAMS removed to eliminate config drift
 
 TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
 
@@ -299,15 +298,51 @@ def process_symbol(symbol, timeframe):
         if pd.isna(atr) or atr == 0:
             atr = float(raw_df['close'].iloc[-1]) * 0.02
 
-        entry_price = float(raw_df['close'].iloc[-1])
-        params = SYMBOL_PARAMS.get(symbol, {}).get(timeframe, {'tp': 1.5, 'sl': 1.0})
+        # IMPORTANT: Entry will be at next bar open (unknown at signal time)
+        # Use current close as proxy and apply realistic entry costs
+        current_close = float(raw_df['close'].iloc[-1])
+        last_bar_time = raw_df.index[-1]
 
-        if signal_type == 'long':
-            tp_price = entry_price + (atr * params['tp'])
-            sl_price = entry_price - (atr * params['sl'])
-        else:
-            tp_price = entry_price - (atr * params['tp'])
-            sl_price = entry_price + (atr * params['sl'])
+        # Apply execution guardrails
+        print(f"  🛡️  Checking execution guardrails...")
+        guardrails = get_moderate_guardrails()
+        costs = get_costs(symbol)
+
+        # Convert spread pips to price
+        if symbol == 'XAUUSD':
+            current_spread = costs.spread_pips * 0.10  # 1 pip = $0.10
+        elif symbol == 'XAGUSD':
+            current_spread = costs.spread_pips * 0.01  # 1 pip = $0.01
+        else:  # Forex
+            current_spread = costs.spread_pips * 0.0001  # 1 pip = 0.0001
+
+        guardrail_results = guardrails.check_all(
+            last_bar_time=last_bar_time,
+            timeframe_minutes=TIMEFRAME_MINUTES[timeframe],
+            current_spread=current_spread,
+            atr=atr,
+            price=current_close,
+            confidence=confidence
+        )
+
+        # Check if guardrails passed
+        if not guardrails.all_passed(guardrail_results):
+            failures = guardrails.get_failures(guardrail_results)
+            print(f"  ❌ {symbol} {timeframe}: Guardrails FAILED - Signal blocked:")
+            for name, reason in failures.items():
+                print(f"     • {name}: {reason}")
+            return
+
+        print(f"  ✅ {symbol} {timeframe}: All guardrails passed")
+
+        # Estimate entry price with costs (next bar open ≈ current close + costs)
+        notional = 100000  # $100k position for cost calculation
+        estimated_entry, entry_commission, entry_slippage = apply_entry_costs(
+            symbol, current_close, notional, direction=signal_type
+        )
+
+        # Calculate TP/SL using unified cost model
+        tp_price, sl_price = calculate_tp_sl_prices(symbol, timeframe, estimated_entry, signal_type, atr)
 
         supabase_payload = {
             'symbol': symbol,
@@ -315,7 +350,7 @@ def process_symbol(symbol, timeframe):
             'signal_type': signal_type,
             'confidence': float(confidence),
             'edge': float(edge),
-            'entry_price': entry_price,
+            'entry_price': estimated_entry,  # Now includes costs
             'take_profit': tp_price,
             'stop_loss': sl_price,
             'timestamp': datetime.now(timezone.utc).isoformat(),
@@ -324,7 +359,7 @@ def process_symbol(symbol, timeframe):
         }
         supabase.table('live_signals').insert(supabase_payload).execute()
 
-        print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {entry_price:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
+        print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {estimated_entry:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
     except Exception as e:
         print(f"  ❌ Error processing {symbol} {timeframe}: {e}")
 
