@@ -111,14 +111,12 @@ def backtest_with_realistic_costs(
     # Get predictions
     X = df[features].fillna(0).values
 
-    # Handle binary or multi-class
+    # Get class predictions and probabilities
+    predictions = model_obj.predict(X)
     proba = model_obj.predict_proba(X)
-    if proba.shape[1] == 2:
-        # Binary: use probability of positive class
-        probabilities = proba[:, 1]
-    else:
-        # Multi-class: use max probability
-        probabilities = proba.max(axis=1)
+
+    # Get confidence (max probability for each prediction)
+    confidences = proba.max(axis=1)
 
     # Get costs and TP/SL params
     costs = get_costs(symbol)
@@ -143,8 +141,12 @@ def backtest_with_realistic_costs(
 
     for i in range(len(df) - max_bars_in_trade - 1):
         # Check confidence
-        if probabilities[i] < confidence_threshold:
+        if confidences[i] < confidence_threshold:
             continue
+
+        # Get prediction: 0=Up (LONG), 1=Down (SHORT)
+        prediction = predictions[i]
+        direction = 'long' if prediction == 0 else 'short'
 
         # Entry at NEXT bar open (realistic!)
         entry_idx = i + 1
@@ -156,9 +158,13 @@ def backtest_with_realistic_costs(
         if pd.isna(atr) or atr <= 0:
             atr = entry_price * 0.02
 
-        # Calculate TP/SL
-        tp_price = entry_price + (atr * tp_sl_params.tp_atr_mult)
-        sl_price = entry_price - (atr * tp_sl_params.sl_atr_mult)
+        # Calculate TP/SL based on direction
+        if direction == 'long':
+            tp_price = entry_price + (atr * tp_sl_params.tp_atr_mult)
+            sl_price = entry_price - (atr * tp_sl_params.sl_atr_mult)
+        else:  # short
+            tp_price = entry_price - (atr * tp_sl_params.tp_atr_mult)
+            sl_price = entry_price + (atr * tp_sl_params.sl_atr_mult)
 
         # Position sizing
         risk_amount = capital * risk_pct
@@ -172,7 +178,7 @@ def backtest_with_realistic_costs(
 
         # Apply entry costs
         adjusted_entry, entry_comm, entry_slip = apply_entry_costs(
-            symbol, entry_price, notional, 'long'
+            symbol, entry_price, notional, direction
         )
 
         # Walk forward to find exit
@@ -184,17 +190,28 @@ def backtest_with_realistic_costs(
             bar = df.iloc[j]
             bars_held = j - entry_idx
 
-            # Check SL first (pessimistic)
-            if bar['low'] <= sl_price:
-                exit_price = sl_price
-                exit_reason = 'SL'
-                break
-
-            # Check TP
-            if bar['high'] >= tp_price:
-                exit_price = tp_price
-                exit_reason = 'TP'
-                break
+            if direction == 'long':
+                # LONG: Check SL first (pessimistic)
+                if bar['low'] <= sl_price:
+                    exit_price = sl_price
+                    exit_reason = 'SL'
+                    break
+                # Check TP
+                if bar['high'] >= tp_price:
+                    exit_price = tp_price
+                    exit_reason = 'TP'
+                    break
+            else:  # short
+                # SHORT: Check SL first (pessimistic)
+                if bar['high'] >= sl_price:
+                    exit_price = sl_price
+                    exit_reason = 'SL'
+                    break
+                # Check TP
+                if bar['low'] <= tp_price:
+                    exit_price = tp_price
+                    exit_reason = 'TP'
+                    break
 
         # Timeout
         if exit_price is None:
@@ -204,13 +221,19 @@ def backtest_with_realistic_costs(
 
         # Apply exit costs
         adjusted_exit, exit_comm, exit_slip = apply_exit_costs(
-            symbol, exit_price, notional, 'long'
+            symbol, exit_price, notional, direction
         )
 
         # Calculate P&L
-        gross_pnl = (exit_price - entry_price) * position_size
+        if direction == 'long':
+            gross_pnl = (exit_price - entry_price) * position_size
+            net_pnl = (adjusted_exit - adjusted_entry) * position_size
+        else:  # short
+            gross_pnl = (entry_price - exit_price) * position_size
+            net_pnl = (adjusted_entry - adjusted_exit) * position_size
+
         total_costs = entry_comm + entry_slip + exit_comm + exit_slip
-        net_pnl = (adjusted_exit - adjusted_entry) * position_size - total_costs
+        net_pnl = net_pnl - total_costs
 
         # Update capital
         capital += net_pnl
@@ -220,6 +243,7 @@ def backtest_with_realistic_costs(
         # Record trade
         trades.append({
             'entry_idx': entry_idx,
+            'direction': direction,
             'entry_price': entry_price,
             'adjusted_entry': adjusted_entry,
             'exit_price': exit_price,
@@ -230,7 +254,7 @@ def backtest_with_realistic_costs(
             'net_pnl': net_pnl,
             'costs': total_costs,
             'capital': capital,
-            'confidence': probabilities[i]
+            'confidence': confidences[i]
         })
 
     # Calculate metrics
@@ -278,6 +302,14 @@ def backtest_with_realistic_costs(
     sl_rate = (trades_df['exit_reason'] == 'SL').sum() / len(trades_df) * 100
     timeout_rate = (trades_df['exit_reason'] == 'timeout').sum() / len(trades_df) * 100
 
+    # Direction breakdown
+    long_trades = (trades_df['direction'] == 'long').sum()
+    short_trades = (trades_df['direction'] == 'short').sum()
+    long_wins = trades_df[(trades_df['direction'] == 'long') & (trades_df['net_pnl'] > 0)]
+    short_wins = trades_df[(trades_df['direction'] == 'short') & (trades_df['net_pnl'] > 0)]
+    long_wr = len(long_wins) / long_trades * 100 if long_trades > 0 else 0
+    short_wr = len(short_wins) / short_trades * 100 if short_trades > 0 else 0
+
     # Cost analysis
     total_costs = trades_df['costs'].sum()
     avg_cost_per_trade = trades_df['costs'].mean()
@@ -287,6 +319,10 @@ def backtest_with_realistic_costs(
         'symbol': symbol,
         'timeframe': timeframe,
         'total_trades': len(trades_df),
+        'long_trades': long_trades,
+        'short_trades': short_trades,
+        'long_wr': long_wr,
+        'short_wr': short_wr,
         'win_rate': win_rate,
         'profit_factor': profit_factor,
         'avg_r': avg_r,
@@ -318,6 +354,11 @@ def print_results(results: Dict):
     print(f"Sharpe/Trade:     {results['sharpe_per_trade']:.2f}")
     print(f"Max Drawdown:     {results['max_dd_pct']:.2f}%")
     print(f"Total Return:     {results['total_return_pct']:+.1f}%")
+
+    # Direction breakdown
+    print(f"\nDirection Breakdown:")
+    print(f"  Long:           {results['long_trades']} trades ({results['long_wr']:.1f}% WR)")
+    print(f"  Short:          {results['short_trades']} trades ({results['short_wr']:.1f}% WR)")
 
     # Exit analysis
     print(f"\nExit Reasons:")
