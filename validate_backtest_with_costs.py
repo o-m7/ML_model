@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from market_costs import get_costs, get_tp_sl, apply_entry_costs, apply_exit_costs
+from shared_features import calculate_features
 
 
 def load_model(symbol: str, timeframe: str) -> dict:
@@ -45,7 +46,7 @@ def load_model(symbol: str, timeframe: str) -> dict:
 
 
 def load_data(symbol: str, timeframe: str) -> pd.DataFrame:
-    """Load feature data."""
+    """Load feature data and calculate features."""
     data_path = Path(f"feature_store/{symbol}/{symbol}_{timeframe}.parquet")
 
     if not data_path.exists():
@@ -64,6 +65,12 @@ def load_data(symbol: str, timeframe: str) -> pd.DataFrame:
         raise ValueError(f"Missing required columns: {missing}")
 
     print(f"📊 Loaded {len(df):,} bars from {data_path.name}")
+
+    # Calculate features using shared_features.py (ensures consistency with training)
+    print(f"🔧 Calculating features...")
+    df = calculate_features(df)
+    print(f"✅ Features calculated, {len(df):,} bars after dropna()")
+
     return df
 
 
