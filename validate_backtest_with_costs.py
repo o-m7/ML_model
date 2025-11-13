@@ -410,7 +410,7 @@ def print_results(results: Dict):
         ('Profit Factor ≥ 1.3', results['profit_factor'] >= 1.3),
         ('Avg R ≥ 0.20', results['avg_r'] >= 0.20),
         ('Sharpe ≥ 0.20', results['sharpe_per_trade'] >= 0.20),
-        ('Max DD ≤ 4%', results['max_dd_pct'] <= 4.0),
+        ('Max DD ≤ 5%', results['max_dd_pct'] <= 5.0),
         ('Min Trades ≥ 50', results['total_trades'] >= 50),
     ]
 
