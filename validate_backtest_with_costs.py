@@ -438,6 +438,7 @@ def main():
     parser.add_argument('--symbol', type=str, required=True, help='Symbol (XAUUSD, XAGUSD, etc.)')
     parser.add_argument('--tf', type=str, required=True, help='Timeframe (5T, 15T, 30T, 1H, 4H)')
     parser.add_argument('--confidence', type=float, default=0.55, help='Confidence threshold (default: 0.55, try 0.65-0.70 to reduce trades)')
+    parser.add_argument('--risk', type=float, default=1.0, help='Risk per trade percentage (default: 1.0, try 0.5 to reduce drawdown)')
 
     args = parser.parse_args()
 
@@ -458,7 +459,8 @@ def main():
             model=model,
             symbol=args.symbol,
             timeframe=args.tf,
-            confidence_threshold=args.confidence
+            confidence_threshold=args.confidence,
+            risk_pct=args.risk / 100.0  # Convert percentage to decimal
         )
 
         # Print results
