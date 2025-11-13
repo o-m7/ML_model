@@ -145,9 +145,10 @@ def backtest_with_realistic_costs(
     print(f"   Commission: {costs.commission_pct*100:.4f}%")
     print(f"   Slippage: {costs.slippage_pct*100:.4f}%")
     print(f"   Confidence threshold: {confidence_threshold:.2f}")
-    print(f"   Risk per trade: {risk_pct*100:.1f}%")
+    print(f"   Risk per trade: {risk_pct*100:.1f}% (FIXED - no compounding)")
+    print(f"   Position sizing: Fixed based on initial capital")
 
-    # Trading simulation
+    # Trading simulation with FIXED position sizing (no compounding)
     capital = initial_capital
     peak_capital = initial_capital
     trades = []
@@ -181,8 +182,9 @@ def backtest_with_realistic_costs(
             tp_price = entry_price - (atr * tp_sl_params.tp_atr_mult)
             sl_price = entry_price + (atr * tp_sl_params.sl_atr_mult)
 
-        # Position sizing with safeguards
-        risk_amount = capital * risk_pct
+        # FIXED position sizing (use initial_capital, not current capital)
+        # This prevents compounding overflow and gives realistic results
+        risk_amount = initial_capital * risk_pct
         sl_distance = abs(entry_price - sl_price)
 
         # Sanity check: SL distance must be reasonable
