@@ -357,8 +357,8 @@ if __name__ == '__main__':
     # Create moderate guardrails
     guards = get_moderate_guardrails()
 
-    # Test case: XAUUSD during London session
-    now = pd.Timestamp('2025-01-10 10:30:00', tz='UTC')
+    # Test case: XAUUSD during London session (use current time)
+    now = pd.Timestamp.now(tz='UTC')
     price = 2650.0
     atr = 8.5
     spread = 0.30
