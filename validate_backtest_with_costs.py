@@ -85,13 +85,33 @@ def backtest_with_realistic_costs(
     - Realistic spread, commission, slippage
     - Unified TP/SL parameters
     """
-    # Get model components
-    features = model['results']['features']
-    model_obj = model['model']
+    # Get model components (handle both old and new formats)
+    if 'results' in model:
+        # Old format
+        features = model['results']['features']
+        model_obj = model['model']
+    else:
+        # New format
+        features = model['features']
+        model_obj = model['model']
+
+    # Ensure features exist in dataframe
+    missing_features = [f for f in features if f not in df.columns]
+    if missing_features:
+        print(f"❌ Missing features in data: {missing_features[:10]}")
+        return None
 
     # Get predictions
     X = df[features].fillna(0).values
-    probabilities = model_obj.predict_proba(X)[:, 1]
+
+    # Handle binary or multi-class
+    proba = model_obj.predict_proba(X)
+    if proba.shape[1] == 2:
+        # Binary: use probability of positive class
+        probabilities = proba[:, 1]
+    else:
+        # Multi-class: use max probability
+        probabilities = proba.max(axis=1)
 
     # Get costs and TP/SL params
     costs = get_costs(symbol)
