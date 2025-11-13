@@ -183,16 +183,21 @@ def estimate_spread(symbol: str, current_price: float) -> float:
     return spread
 
 
-def test_guardrails_with_live_data(symbol: str = 'XAUUSD', timeframe: str = '15T'):
+def test_guardrails_with_live_data(symbol: str = 'XAUUSD', timeframe: str = '15T', bars: int = 50000):
     """
     Test guardrails using live Polygon data.
+
+    Args:
+        symbol: Trading symbol
+        timeframe: Timeframe string
+        bars: Number of bars to fetch (default: 50,000 for pattern detection)
     """
     print("\n" + "="*80)
     print(f"LIVE GUARDRAILS TEST - {symbol} {timeframe}")
     print("="*80 + "\n")
 
     # Fetch live data
-    df = fetch_live_data(symbol, timeframe, bars=50)
+    df = fetch_live_data(symbol, timeframe, bars=bars)
 
     if df is None or len(df) == 0:
         print("\n❌ Cannot proceed without data")
@@ -335,6 +340,8 @@ def main():
                        help='Symbol to test (XAUUSD, XAGUSD, EURUSD, etc.)')
     parser.add_argument('--tf', type=str, default='15T',
                        help='Timeframe (5T, 15T, 30T, 1H, 4H)')
+    parser.add_argument('--bars', type=int, default=50000,
+                       help='Number of bars to fetch (default: 50,000)')
     parser.add_argument('--api-key', type=str, default=None,
                        help='Polygon API key (or set POLYGON_API_KEY in .env)')
 
@@ -365,7 +372,7 @@ def main():
         print(f"   Available: {', '.join(TIMEFRAME_MINUTES.keys())}")
         return 1
 
-    return test_guardrails_with_live_data(args.symbol, args.tf)
+    return test_guardrails_with_live_data(args.symbol, args.tf, args.bars)
 
 
 if __name__ == '__main__':
