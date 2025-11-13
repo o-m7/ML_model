@@ -125,11 +125,11 @@ TP_SL_PARAMS: Dict[str, Dict[str, SymbolTPSL]] = {
         '4H':  SymbolTPSL(tp_atr_mult=2.0, sl_atr_mult=1.0),  # R:R = 2.0:1
     },
     'XAGUSD': {
-        '5T':  SymbolTPSL(tp_atr_mult=1.2, sl_atr_mult=1.0),
-        '15T': SymbolTPSL(tp_atr_mult=1.4, sl_atr_mult=1.0),
-        '30T': SymbolTPSL(tp_atr_mult=1.6, sl_atr_mult=1.0),
-        '1H':  SymbolTPSL(tp_atr_mult=1.8, sl_atr_mult=1.0),
-        '4H':  SymbolTPSL(tp_atr_mult=2.0, sl_atr_mult=1.0),
+        '5T':  SymbolTPSL(tp_atr_mult=1.6, sl_atr_mult=1.0),  # Widened from 1.2 to improve profit factor
+        '15T': SymbolTPSL(tp_atr_mult=1.6, sl_atr_mult=1.0),  # Widened from 1.4
+        '30T': SymbolTPSL(tp_atr_mult=1.8, sl_atr_mult=1.0),  # Widened from 1.6
+        '1H':  SymbolTPSL(tp_atr_mult=2.0, sl_atr_mult=1.0),  # Widened from 1.8
+        '4H':  SymbolTPSL(tp_atr_mult=2.2, sl_atr_mult=1.0),  # Widened from 2.0
     },
     'EURUSD': {
         '5T':  SymbolTPSL(tp_atr_mult=1.1, sl_atr_mult=1.0),
