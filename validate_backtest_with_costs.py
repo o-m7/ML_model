@@ -181,15 +181,22 @@ def backtest_with_realistic_costs(
             tp_price = entry_price - (atr * tp_sl_params.tp_atr_mult)
             sl_price = entry_price + (atr * tp_sl_params.sl_atr_mult)
 
-        # Position sizing
+        # Position sizing with safeguards
         risk_amount = capital * risk_pct
         sl_distance = abs(entry_price - sl_price)
 
-        if sl_distance == 0:
+        # Sanity check: SL distance must be reasonable
+        min_sl_distance = entry_price * 0.001  # At least 0.1% distance
+        if sl_distance < min_sl_distance:
             continue
 
         position_size = risk_amount / sl_distance
         notional = position_size * entry_price
+
+        # Sanity check: Notional must be reasonable (max 10x capital)
+        max_notional = capital * 10
+        if notional > max_notional or notional <= 0:
+            continue
 
         # Apply entry costs
         adjusted_entry, entry_comm, entry_slip = apply_entry_costs(
