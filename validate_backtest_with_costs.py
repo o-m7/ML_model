@@ -118,6 +118,21 @@ def backtest_with_realistic_costs(
     # Get confidence (max probability for each prediction)
     confidences = proba.max(axis=1)
 
+    # Determine class mapping from model metadata
+    # Old models: ['Up', 'Down'] or ['Flat', 'Up', 'Down'] → 0=Up, 1=Down
+    # New models: ['Down', 'Up'] → 0=Down, 1=Up
+    class_names = model.get('class_names', ['Up', 'Down'])
+
+    # Determine which class is Up
+    if len(class_names) == 2:
+        up_class = class_names.index('Up') if 'Up' in class_names else 0
+    else:
+        # Multi-class (old format with Flat)
+        up_class = 1  # Assume old format
+
+    print(f"   Class names: {class_names}")
+    print(f"   Up class index: {up_class}")
+
     # Get costs and TP/SL params
     costs = get_costs(symbol)
     tp_sl_params = get_tp_sl(symbol, timeframe)
@@ -144,9 +159,9 @@ def backtest_with_realistic_costs(
         if confidences[i] < confidence_threshold:
             continue
 
-        # Get prediction: 0=Up (LONG), 1=Down (SHORT)
+        # Get prediction and map to direction
         prediction = predictions[i]
-        direction = 'long' if prediction == 0 else 'short'
+        direction = 'long' if prediction == up_class else 'short'
 
         # Entry at NEXT bar open (realistic!)
         entry_idx = i + 1
