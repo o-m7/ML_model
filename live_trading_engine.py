@@ -3,6 +3,8 @@
 LIVE TRADING ENGINE
 ===================
 Fetches live data from Polygon, calculates features, generates signals.
+
+IMPORTANT: Fixed look-ahead bias - entry price estimated as next bar open (current close + costs)
 """
 
 import os
@@ -17,6 +19,10 @@ from pathlib import Path
 from dotenv import load_dotenv
 from supabase import create_client
 import pandas_ta as ta
+
+# Import unified cost model and guardrails
+from market_costs import get_tp_sl, apply_entry_costs, calculate_tp_sl_prices
+from execution_guardrails import get_moderate_guardrails
 
 load_dotenv()
 
@@ -48,51 +54,8 @@ TICKER_MAP = {
     'NZDUSD': 'C:NZDUSD',
 }
 
-# TP/SL Parameters (from production_final_system.py)
-SYMBOL_PARAMS = {
-    'XAUUSD': {
-        '5T': {'tp': 1.4, 'sl': 1.0},
-        '15T': {'tp': 1.5, 'sl': 1.0},
-        '30T': {'tp': 1.5, 'sl': 1.0},
-        '1H': {'tp': 1.6, 'sl': 1.0},
-        '4H': {'tp': 1.8, 'sl': 1.0},
-    },
-    'XAGUSD': {
-        '5T': {'tp': 1.4, 'sl': 1.0},
-        '15T': {'tp': 1.5, 'sl': 1.0},
-        '30T': {'tp': 1.5, 'sl': 1.0},
-        '1H': {'tp': 1.5, 'sl': 1.0},
-        '4H': {'tp': 1.7, 'sl': 1.0},
-    },
-    'EURUSD': {
-        '5T': {'tp': 1.2, 'sl': 1.0},
-        '15T': {'tp': 1.4, 'sl': 1.0},
-        '30T': {'tp': 1.3, 'sl': 1.0},
-        '1H': {'tp': 1.5, 'sl': 1.0},
-        '4H': {'tp': 1.6, 'sl': 1.0},
-    },
-    'GBPUSD': {
-        '5T': {'tp': 1.5, 'sl': 1.0},
-        '15T': {'tp': 1.6, 'sl': 1.0},
-        '30T': {'tp': 1.6, 'sl': 1.0},
-        '1H': {'tp': 1.6, 'sl': 1.0},
-        '4H': {'tp': 1.7, 'sl': 1.0},
-    },
-    'AUDUSD': {
-        '5T': {'tp': 1.4, 'sl': 1.0},
-        '15T': {'tp': 1.5, 'sl': 1.0},
-        '30T': {'tp': 1.5, 'sl': 1.0},
-        '1H': {'tp': 1.6, 'sl': 1.0},
-        '4H': {'tp': 1.7, 'sl': 1.0},
-    },
-    'NZDUSD': {
-        '5T': {'tp': 1.4, 'sl': 1.0},
-        '15T': {'tp': 1.5, 'sl': 1.0},
-        '30T': {'tp': 1.5, 'sl': 1.0},
-        '1H': {'tp': 1.6, 'sl': 1.0},
-        '4H': {'tp': 1.7, 'sl': 1.0},
-    },
-}
+# TP/SL Parameters now unified in market_costs.py
+# Old hardcoded SYMBOL_PARAMS removed to eliminate config drift
 
 
 def fetch_polygon_data(symbol: str, timeframe_minutes: int, bars: int = 200):
@@ -351,23 +314,7 @@ def get_prediction(symbol: str, timeframe: str, features: list) -> dict:
         return None
 
 
-def calculate_tp_sl_prices(symbol: str, timeframe: str, entry_price: float, 
-                          signal_direction: str, atr: float) -> tuple:
-    """Calculate take profit and stop loss prices."""
-    # Get TP/SL multipliers for this symbol/timeframe
-    params = SYMBOL_PARAMS.get(symbol, {}).get(timeframe, {'tp': 1.5, 'sl': 1.0})
-    tp_mult = params['tp']
-    sl_mult = params['sl']
-    
-    # Calculate TP and SL based on direction
-    if signal_direction.lower() == 'long':
-        tp_price = entry_price + (atr * tp_mult)
-        sl_price = entry_price - (atr * sl_mult)
-    else:  # short
-        tp_price = entry_price - (atr * tp_mult)
-        sl_price = entry_price + (atr * sl_mult)
-    
-    return tp_price, sl_price
+# calculate_tp_sl_prices() now imported from market_costs.py (unified cost model)
 
 
 def store_signal_in_supabase(signal_data: dict):
@@ -418,49 +365,106 @@ def process_symbol_timeframe(symbol: str, timeframe: str):
     
     # Extract feature vector
     features = extract_feature_vector(df)
-    current_price = float(df.iloc[-1]['close'])
-    
-    print(f"  📈 Current price: {current_price:.5f}")
+
+    # IMPORTANT: In live trading, we get signal on current bar close,
+    # but actual entry will be at NEXT bar open (unknown at signal time).
+    # We use current close as proxy and apply realistic entry costs.
+    current_close = float(df.iloc[-1]['close'])
+    last_bar_time = df.index[-1]
+
+    print(f"  📈 Current price: {current_close:.5f}")
     print(f"  🔢 Features: {len(features)}")
-    
+
     # Get prediction
     print(f"  🤖 Getting prediction...")
     prediction = get_prediction(symbol, timeframe, features)
-    
+
     if prediction is None:
         return
-    
+
     # Display result
     signal = prediction['directional_signal']
     quality = prediction['signal_quality']
-    confidence = prediction['confidence'] * 100
-    
+    confidence = prediction['confidence']
+
     quality_icon = {'high': '🟢', 'medium': '🟡', 'low': '🔴'}[quality]
-    
+
     print(f"  {quality_icon} Signal: {signal.upper()}")
     print(f"  📊 Quality: {quality.upper()}")
-    print(f"  💪 Confidence: {confidence:.1f}%")
+    print(f"  💪 Confidence: {confidence*100:.1f}%")
     print(f"  📈 Should Trade: {prediction['should_trade']}")
-    
-    # Calculate TP/SL prices
-    atr = float(df.iloc[-1].get('atr14', current_price * 0.02))  # Use 2% of price as fallback
-    tp_price, sl_price = calculate_tp_sl_prices(symbol, timeframe, current_price, signal, atr)
-    
+
+    # Calculate ATR
+    atr = float(df.iloc[-1].get('atr14', current_close * 0.02))  # Use 2% of price as fallback
+
+    # Apply execution guardrails (staleness, spread, volatility, session, confidence)
+    print(f"  🛡️  Checking execution guardrails...")
+    guardrails = get_moderate_guardrails()
+
+    # Get timeframe in minutes
+    tf_minutes = TIMEFRAMES[timeframe]['minutes']
+
+    # Estimate spread (in practice, get from broker's live quote)
+    from market_costs import get_costs
+    costs = get_costs(symbol)
+
+    # Convert spread pips to price
+    if symbol == 'XAUUSD':
+        current_spread = costs.spread_pips * 0.10  # 1 pip = $0.10
+    elif symbol == 'XAGUSD':
+        current_spread = costs.spread_pips * 0.01  # 1 pip = $0.01
+    else:  # Forex
+        current_spread = costs.spread_pips * 0.0001  # 1 pip = 0.0001
+
+    guardrail_results = guardrails.check_all(
+        last_bar_time=last_bar_time,
+        timeframe_minutes=tf_minutes,
+        current_spread=current_spread,
+        atr=atr,
+        price=current_close,
+        confidence=confidence
+    )
+
+    # Check if guardrails passed
+    if not guardrails.all_passed(guardrail_results):
+        failures = guardrails.get_failures(guardrail_results)
+        print(f"  ❌ Guardrails FAILED - Signal blocked:")
+        for name, reason in failures.items():
+            print(f"     • {name}: {reason}")
+        return
+
+    print(f"  ✅ All guardrails passed")
+
+    # Estimate entry price with costs (next bar open ≈ current close + costs)
+    # In live trading, actual entry will be at next bar open
+    notional = 100000  # $100k position for cost calculation
+    estimated_entry, entry_commission, entry_slippage = apply_entry_costs(
+        symbol, current_close, notional, direction=signal
+    )
+
+    print(f"  💰 Estimated entry: {estimated_entry:.5f} (includes spread + commission + slippage)")
+
+    # Calculate TP/SL prices using unified cost model
+    tp_price, sl_price = calculate_tp_sl_prices(symbol, timeframe, estimated_entry, signal, atr)
+
     # Store signal
     signal_data = {
         **prediction,
-        'current_price': current_price,
+        'current_price': current_close,
+        'estimated_entry': estimated_entry,
         'tp_price': tp_price,
         'sl_price': sl_price,
         'atr': atr,
+        'spread': current_spread,
         'timestamp': datetime.now(timezone.utc).isoformat()
     }
-    
+
     store_signal_in_supabase(signal_data)
-    
+
     # Alert on high-quality signals
     if prediction['should_trade']:
         print(f"\n  🚨 HIGH QUALITY SIGNAL! {signal.upper()} {symbol} {timeframe}")
+        print(f"     Entry: {estimated_entry:.5f} | TP: {tp_price:.5f} | SL: {sl_price:.5f}")
 
 
 def run_once():
