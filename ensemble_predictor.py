@@ -13,9 +13,14 @@ from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
 
-# Import model class for unpickling
+# Import model class for unpickling (BalancedModel needed for XAGUSD models)
 sys.path.insert(0, str(Path(__file__).parent))
-from production_final_system import BalancedModel
+from balanced_model import BalancedModel
+
+# Make BalancedModel available in __main__ for pickle
+import __main__
+if not hasattr(__main__, 'BalancedModel'):
+    setattr(__main__, 'BalancedModel', BalancedModel)
 
 warnings.filterwarnings('ignore')
 

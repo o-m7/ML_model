@@ -5,9 +5,15 @@ on:
     - cron: '* * * * *'
   workflow_dispatch:
 
+# Prevent concurrent runs - only one signal generation at a time
+concurrency:
+  group: continuous-signal-worker
+  cancel-in-progress: false  # Don't cancel, let it finish
+
 jobs:
   generate-signals:
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # Kill if it takes >5 minutes
     
     steps:
       - name: Checkout code
