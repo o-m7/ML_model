@@ -1,0 +1,33 @@
+{
+  "symbol": "XAUUSD",
+  "timeframe": "5T",
+  "features": [
+    "atr14",
+    "returns",
+    "log_returns",
+    "sma10",
+    "close_vs_sma10",
+    "sma20",
+    "close_vs_sma20",
+    "sma50",
+    "close_vs_sma50",
+    "rsi14",
+    "bb_upper",
+    "bb_lower",
+    "bb_position",
+    "volume_sma20",
+    "volume_ratio",
+    "macd",
+    "macd_signal",
+    "macd_hist"
+  ],
+  "class_names": [
+    "Down",
+    "Up"
+  ],
+  "num_features": 18,
+  "input_shape": [
+    null,
+    18
+  ]
+}
