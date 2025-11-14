@@ -153,6 +153,30 @@ def get_recent_sentiment(symbol: str) -> float:
         return 0.0  # Neutral on error
 
 
+def is_market_closed_or_closing(symbol: str) -> dict:
+    """
+    Check if market is closed or in pre-close period with stale data.
+    Forex/metals market: Sunday 22:00 UTC to Friday 22:00 UTC
+
+    Returns:
+        dict with 'skip': bool, 'reason': str
+    """
+    now = datetime.now(timezone.utc)
+    dow = now.weekday()  # 0=Mon, 6=Sun
+    hour = now.hour
+
+    # Weekend: Friday 22:00 to Sunday 22:00
+    if (dow == 5) or (dow == 6 and hour < 22) or (dow == 4 and hour >= 22):
+        return {'skip': True, 'reason': 'Market closed (weekend)'}
+
+    # Friday pre-close (last 90 minutes): Data lags significantly
+    # Polygon data can be 30-40 minutes stale before weekend close
+    if dow == 4 and hour >= 20 and hour < 22:  # Friday 20:00-22:00 UTC
+        return {'skip': True, 'reason': 'Pre-close period (data unreliable)'}
+
+    return {'skip': False, 'reason': ''}
+
+
 def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
     """Fetch OHLCV data from Polygon REST API (PAID PLAN - REAL-TIME)."""
     ticker = TICKER_MAP.get(symbol, symbol)
@@ -234,6 +258,12 @@ def process_symbol(symbol, timeframe):
         blackout_result = is_in_blackout_window(symbol)
         if blackout_result['is_blackout']:
             print(f"  🚫 {symbol} {timeframe}: BLACKOUT - {blackout_result['reason']}")
+            return
+
+        # Check if market is closed or in pre-close period
+        market_status = is_market_closed_or_closing(symbol)
+        if market_status['skip']:
+            print(f"  🚫 {symbol} {timeframe}: {market_status['reason']}")
             return
 
         raw_df = fetch_polygon_data(symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200))
