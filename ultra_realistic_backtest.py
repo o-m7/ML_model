@@ -26,6 +26,9 @@ from pathlib import Path
 # Import baseline backtest
 from validate_backtest_with_costs import load_model, load_data, backtest_with_realistic_costs
 
+# Import BalancedModel class for XAGUSD models
+from balanced_model import BalancedModel
+
 
 class UltraRealisticExecutor:
     """Simulates ultra-realistic execution challenges."""

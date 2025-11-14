@@ -23,6 +23,9 @@ import pandas as pd
 from market_costs import get_costs, get_tp_sl, apply_entry_costs, apply_exit_costs
 from shared_features import calculate_features
 
+# Import BalancedModel class for XAGUSD models
+from balanced_model import BalancedModel
+
 
 def load_model(symbol: str, timeframe: str) -> dict:
     """Load trained model (checks rentec → production → fast)."""
@@ -92,15 +95,17 @@ def backtest_with_realistic_costs(
     - Realistic spread, commission, slippage
     - Unified TP/SL parameters
     """
-    # Get model components (handle both old and new formats)
-    if 'results' in model:
-        # Old format
+    # Get model components (handle both XAUUSD and XAGUSD formats)
+    if 'results' in model and 'features' in model['results']:
+        # XAUUSD format (features in results)
         features = model['results']['features']
         model_obj = model['model']
-    else:
-        # New format
+    elif 'features' in model:
+        # XAGUSD format (features at top level)
         features = model['features']
         model_obj = model['model']
+    else:
+        raise ValueError("Model does not contain 'features' key")
 
     # Ensure features exist in dataframe
     missing_features = [f for f in features if f not in df.columns]
