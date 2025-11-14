@@ -351,7 +351,7 @@ def process_symbol(symbol, timeframe):
         )
 
         # Calculate TP/SL using unified cost model
-        tp_price, sl_price = calculate_tp_sl_prices(symbol, timeframe, estimated_entry, signal_type, atr)
+        tp_price, sl_price = calculate_tp_sl_prices(symbol, timeframe, estimated_entry, atr, signal_type)
 
         supabase_payload = {
             'symbol': symbol,
