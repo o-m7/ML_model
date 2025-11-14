@@ -3,56 +3,38 @@
   "timeframe": "1H",
   "features": [
     "atr14",
-    "trange",
-    "vol_percentile",
-    "bb_mid_20",
-    "bb_bbp_20",
-    "bb_bw_20",
-    "kelt_bw_20",
-    "squeeze_on",
-    "ema20_slope",
-    "ema50_slope",
-    "ema200_slope",
-    "trend_strength",
-    "pullback_depth",
-    "pullback_time",
-    "adx14",
-    "aroon_up",
-    "aroon_dn",
+    "returns",
+    "log_returns",
+    "sma10",
+    "close_vs_sma10",
+    "sma20",
+    "close_vs_sma20",
+    "sma50",
+    "close_vs_sma50",
+    "rsi14",
+    "bb_upper",
+    "bb_lower",
+    "bb_position",
+    "volume_sma20",
+    "volume_ratio",
     "macd",
-    "macdh",
-    "stoch_k",
-    "obv",
-    "adosc",
-    "dist_nearest_sr0",
-    "upper_wick_ratio",
-    "lower_wick_ratio",
-    "wick_pressure",
-    "minute_of_day",
-    "dow",
-    "session",
-    "session_pos"
+    "macd_signal",
+    "macd_hist"
+  ],
+  "class_names": [
+    "Down",
+    "Up"
   ],
   "params": {
-    "tp": 1.6,
+    "tp": 2.2,
     "sl": 1.0,
-    "min_conf": 0.35,
-    "min_edge": 0.08,
-    "pos_size": 0.5
+    "min_conf": 0.50,
+    "min_edge": 0.15,
+    "pos_size": 0.40
   },
-  "backtest_results": {
-    "total_trades": 266,
-    "long_trades": 187,
-    "short_trades": 79,
-    "win_rate": 43.984962406015036,
-    "profit_factor": 1.1324644806471205,
-    "sharpe_ratio": 0.20362259408940217,
-    "max_drawdown_pct": 5.5620656072066215,
-    "total_return_pct": 5.3238022892962755
-  },
-  "num_features": 30,
+  "num_features": 18,
   "input_shape": [
     null,
-    30
+    18
   ]
 }

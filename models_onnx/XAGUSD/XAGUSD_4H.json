@@ -34,11 +34,11 @@
     "sess_asia"
   ],
   "params": {
-    "tp": 1.7,
+    "tp": 2.5,
     "sl": 1.0,
-    "min_conf": 0.3,
+    "min_conf": 0.30,
     "min_edge": 0.06,
-    "pos_size": 0.3
+    "pos_size": 0.35
   },
   "backtest_results": {
     "total_trades": 108,

@@ -63,25 +63,29 @@ class TripleBarrierLabeler:
         for i in range(len(df)):
             row = df.iloc[i]
             atr = row[self.atr_col]
-            
+
             # Handle NaN ATR
             if pd.isna(atr) or atr <= 0:
                 atr = row['close'] * 0.02  # Fallback: 2% of price
-            
-            entry_price = row['close']
-            tp_price = entry_price + (atr * self.tp_atr_mult)
-            sl_price = entry_price - (atr * self.sl_atr_mult)
-            
-            # Check if near end
-            if i >= len(df) - self.horizon_bars:
+
+            # CRITICAL FIX: Entry is at NEXT bar's open (not current bar's close)
+            # This matches live trading reality: signal on bar i → enter on bar i+1 at open
+            # Check if we have a next bar available
+            if i >= len(df) - 1 - self.horizon_bars:
+                # Not enough data for next bar entry + full horizon
                 labels.append(0)
                 returns.append(0.0)
                 durations.append(0)
                 tp_hit_flags.append(0)
                 sl_hit_flags.append(0)
                 continue
-            
-            # Look ahead
+
+            # Entry price is NEXT bar's open (realistic!)
+            entry_price = df.iloc[i+1]['open']
+            tp_price = entry_price + (atr * self.tp_atr_mult)
+            sl_price = entry_price - (atr * self.sl_atr_mult)
+
+            # Look ahead from NEXT bar (after entry)
             future = df.iloc[i+1:i+1+self.horizon_bars]
             
             # Find when barriers hit

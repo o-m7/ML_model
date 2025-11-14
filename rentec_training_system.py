@@ -284,52 +284,65 @@ def load_symbol_data(symbol: str, timeframe: str) -> pd.DataFrame:
 # TRIPLE-BARRIER LABELING (BALANCED)
 # ============================================================================
 
-def create_balanced_labels(df: pd.DataFrame, tp_mult: float, sl_mult: float, 
+def create_balanced_labels(df: pd.DataFrame, tp_mult: float, sl_mult: float,
                           flat_threshold: float = 0.85) -> pd.DataFrame:
     """
     Create balanced 3-class labels with 25-30% Flat representation.
-    
+
+    CRITICAL FIX: Entry at NEXT bar's open (not current bar's close)
+    This matches live trading reality: signal on bar i → enter on bar i+1 at open
+
     Strategy:
     - TP/SL hits are always directional (clear moves)
     - Non-hits are Flat unless they achieve >= flat_threshold of target
     """
-    
+
     print("  Creating balanced triple-barrier labels...")
-    
+
     df = df.copy()
     n = len(df)
     horizon = CONFIG.FORECAST_HORIZON
-    
+
     atr = df.get('atr14', df['close'] * 0.015).values
-    entry_prices = df['close'].values
+
+    # CRITICAL FIX: Entry is at NEXT bar's open (realistic!)
+    # Signal on bar i → Entry at bar i+1 open
+    next_bar_opens = df['open'].shift(-1).values
+    entry_prices = next_bar_opens
+
     tp_prices_long = entry_prices + (atr * tp_mult)
     sl_prices_long = entry_prices - (atr * sl_mult)
-    
+
     labels = np.zeros(n, dtype=int)
     returns = np.zeros(n)
     durations = np.zeros(n, dtype=int)
     hit_types = np.array(['none'] * n, dtype=object)
-    
+
     highs = df['high'].values
     lows = df['low'].values
     closes = df['close'].values
-    
-    for i in range(n - horizon):
-        future_end = min(i + 1 + horizon, n)
+
+    # Need extra bar at end for next bar open
+    for i in range(n - horizon - 1):
+        # Skip if next bar open is NaN (no next bar available)
+        if np.isnan(entry_prices[i]):
+            continue
+
+        future_end = min(i + 2 + horizon, n)  # Start from i+1 (after entry)
         future_highs = highs[i+1:future_end]
         future_lows = lows[i+1:future_end]
         future_closes = closes[i+1:future_end]
-        
+
         if len(future_highs) == 0:
             continue
-        
+
         # Check for TP/SL hits
         tp_hits = np.where(future_highs >= tp_prices_long[i])[0]
         sl_hits = np.where(future_lows <= sl_prices_long[i])[0]
-        
+
         tp_hit = len(tp_hits) > 0
         sl_hit = len(sl_hits) > 0
-        
+
         if tp_hit and sl_hit:
             # Both hit - use whichever came first
             if tp_hits[0] < sl_hits[0]:
@@ -357,40 +370,40 @@ def create_balanced_labels(df: pd.DataFrame, tp_mult: float, sl_mult: float,
             final_price = future_closes[-1]
             ret = (final_price - entry_prices[i]) / entry_prices[i]
             atr_normalized_ret = ret * entry_prices[i] / atr[i]
-            
+
             # Only label as directional if >= flat_threshold of target
             if atr_normalized_ret >= (tp_mult * flat_threshold):
                 labels[i] = 1  # Up
                 hit_types[i] = 'partial_up'
             elif atr_normalized_ret <= -(sl_mult * flat_threshold):
-                labels[i] = 2  # Down  
+                labels[i] = 2  # Down
                 hit_types[i] = 'partial_down'
             else:
                 labels[i] = 0  # Flat - ambiguous/small move
                 hit_types[i] = 'flat'
-            
+
             returns[i] = ret
             durations[i] = len(future_closes)
-    
+
     df['target'] = labels
     df['expected_return'] = returns
     df['expected_duration'] = durations
     df['hit_type'] = hit_types
-    
-    # Remove last bars without full horizon
-    df = df.iloc[:-CONFIG.FORECAST_HORIZON]
-    
+
+    # Remove last bars without full horizon + need for next bar
+    df = df.iloc[:-(CONFIG.FORECAST_HORIZON + 1)]
+
     # Print class distribution
     class_counts = df['target'].value_counts()
     total = len(df)
     print(f"    Flat: {class_counts.get(0, 0):,} ({class_counts.get(0, 0)/total*100:.1f}%)")
     print(f"    Up:   {class_counts.get(1, 0):,} ({class_counts.get(1, 0)/total*100:.1f}%)")
     print(f"    Down: {class_counts.get(2, 0):,} ({class_counts.get(2, 0)/total*100:.1f}%)")
-    
+
     # Print hit type distribution
     hit_type_counts = df['hit_type'].value_counts()
     print(f"    TP hits: {hit_type_counts.get('tp', 0):,}, SL hits: {hit_type_counts.get('sl', 0):,}")
-    
+
     return df
 
 
