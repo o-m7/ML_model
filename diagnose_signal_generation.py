@@ -69,22 +69,20 @@ def check_imports():
 def check_model_files():
     """Check if model files exist."""
     print("\n" + "=" * 60)
-    print("3. MODEL FILES")
+    print("3. MODEL FILES (XAUUSD + XAGUSD only)")
     print("=" * 60)
 
+    # Only check XAUUSD and XAGUSD (active models)
     models = [
-        ('AUDUSD', ['15T', '30T', '5T', '1H']),
-        ('EURUSD', ['30T', '5T']),
-        ('GBPUSD', ['15T', '1H', '30T', '5T']),
-        ('NZDUSD', ['15T', '1H', '30T', '5T']),
-        ('XAGUSD', ['15T', '1H', '30T', '5T']),
+        ('XAGUSD', ['15T', '1H', '30T', '5T', '4H']),
         ('XAUUSD', ['15T', '1H', '30T', '5T']),
     ]
 
     all_ok = True
     for symbol, timeframes in models:
         for tf in timeframes:
-            pkl_path = Path(f'models_production/{symbol}_{tf}.pkl')
+            # Fixed path: models are in subdirectories with _PRODUCTION_READY suffix
+            pkl_path = Path(f'models_production/{symbol}/{symbol}_{tf}_PRODUCTION_READY.pkl')
             json_path = Path(f'models_onnx/{symbol}/{symbol}_{tf}.json')
 
             pkl_ok = pkl_path.exists()
@@ -101,7 +99,7 @@ def check_model_files():
 def check_ensemble_loading():
     """Check if ensemble predictors can be loaded."""
     print("\n" + "=" * 60)
-    print("4. ENSEMBLE PREDICTOR LOADING")
+    print("4. ENSEMBLE PREDICTOR LOADING (XAUUSD + XAGUSD only)")
     print("=" * 60)
 
     all_ok = True
@@ -109,7 +107,8 @@ def check_ensemble_loading():
         # Import after checking modules exist
         from ensemble_predictor import EnsemblePredictor
 
-        symbols = ['AUDUSD', 'EURUSD', 'GBPUSD', 'NZDUSD', 'XAGUSD', 'XAUUSD']
+        # Only check active models
+        symbols = ['XAGUSD', 'XAUUSD']
 
         for symbol in symbols:
             try:
@@ -181,13 +180,13 @@ def check_supabase_access():
 
         supabase = create_client(url, key)
 
-        # Try to read from signals table
-        response = supabase.table('signals').select('*').limit(1).execute()
+        # Try to read from live_signals table (correct table name)
+        response = supabase.table('live_signals').select('*').limit(1).execute()
 
-        print(f"✅ Supabase accessible: {len(response.data)} rows fetched from signals table")
+        print(f"✅ Supabase accessible: {len(response.data)} rows fetched from live_signals table")
 
         # Check most recent signal timestamps
-        response = supabase.table('signals').select('symbol,timeframe,timestamp').order('timestamp', desc=True).limit(10).execute()
+        response = supabase.table('live_signals').select('symbol,timeframe,timestamp').order('timestamp', desc=True).limit(10).execute()
 
         if response.data:
             latest = response.data[0]
