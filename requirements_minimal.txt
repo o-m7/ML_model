@@ -1,0 +1,26 @@
+# ============================================================================
+# MINIMAL REQUIREMENTS - Just for the new fixes modules
+# ============================================================================
+#
+# This is the absolute minimum to run the new fixes:
+#   pip install -r requirements_minimal.txt
+#
+# ============================================================================
+
+numpy>=1.24.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+python-dateutil>=2.8.0
+pytz>=2023.0
+
+# ============================================================================
+# What this enables:
+# ============================================================================
+#
+# ✅ market_costs.py              (numpy, pandas)
+# ✅ execution_guardrails.py      (numpy, pandas)
+# ✅ test_cost_parity.py          (numpy, pandas)
+# ✅ calibrate_thresholds.py      (numpy, pandas, matplotlib)
+# ✅ validate_backtest_with_costs.py  (numpy, pandas)
+#
+# ============================================================================

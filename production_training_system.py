@@ -281,42 +281,56 @@ def load_symbol_data(symbol: str, timeframe: str) -> pd.DataFrame:
 # ============================================================================
 
 def create_triple_barrier_labels(df: pd.DataFrame, tp_mult: float, sl_mult: float) -> pd.DataFrame:
-    """Create 3-class labels: Flat(0), Up(1), Down(2)."""
-    
+    """Create 3-class labels: Flat(0), Up(1), Down(2).
+
+    CRITICAL FIX: Entry at NEXT bar's open (not current bar's close)
+    This matches live trading reality: signal on bar i → enter on bar i+1 at open
+    """
+
     print("  Creating triple-barrier labels...")
-    
+
     df = df.copy()
     n = len(df)
     horizon = CONFIG.FORECAST_HORIZON
-    
+
     atr = df.get('atr14', df['close'] * 0.02).values
-    entry_prices = df['close'].values
+
+    # CRITICAL FIX: Entry is at NEXT bar's open (realistic!)
+    # Signal on bar i → Entry at bar i+1 open
+    next_bar_opens = df['open'].shift(-1).values
+    entry_prices = next_bar_opens
+
     tp_prices = entry_prices + (atr * tp_mult)
     sl_prices = entry_prices - (atr * sl_mult)
-    
+
     labels = np.zeros(n, dtype=int)
     returns = np.zeros(n)
     durations = np.zeros(n, dtype=int)
-    
+
     highs = df['high'].values
     lows = df['low'].values
     closes = df['close'].values
-    
-    for i in range(n - horizon):
-        future_end = min(i + 1 + horizon, n)
+
+    # Need extra bar at end for next bar open
+    for i in range(n - horizon - 1):
+        # Skip if next bar open is NaN (no next bar available)
+        if np.isnan(entry_prices[i]):
+            continue
+
+        future_end = min(i + 2 + horizon, n)  # Start from i+1 (after entry)
         future_highs = highs[i+1:future_end]
         future_lows = lows[i+1:future_end]
         future_closes = closes[i+1:future_end]
-        
+
         if len(future_highs) == 0:
             continue
-        
+
         tp_hits = np.where(future_highs >= tp_prices[i])[0]
         sl_hits = np.where(future_lows <= sl_prices[i])[0]
-        
+
         tp_hit = len(tp_hits) > 0
         sl_hit = len(sl_hits) > 0
-        
+
         if tp_hit and sl_hit:
             if tp_hits[0] < sl_hits[0]:
                 labels[i] = 1
@@ -339,7 +353,7 @@ def create_triple_barrier_labels(df: pd.DataFrame, tp_mult: float, sl_mult: floa
             final_price = future_closes[-1]
             ret = (final_price - entry_prices[i]) / entry_prices[i]
             atr_normalized_ret = ret * entry_prices[i] / atr[i]
-            
+
             # ✅ STRICT THRESHOLDS - Create 25-35% Flat labels for balanced learning
             # Only label as Up/Down if move achieves at least 90% of TP/SL targets
             # This ensures clear directional moves vs ambiguous ones
@@ -349,23 +363,24 @@ def create_triple_barrier_labels(df: pd.DataFrame, tp_mult: float, sl_mult: floa
                 labels[i] = 2  # Down
             else:
                 labels[i] = 0  # Flat - ambiguous moves
-            
+
             returns[i] = ret
             durations[i] = len(future_closes)
-    
+
     df['target'] = labels
     df['expected_return'] = returns
     df['expected_duration'] = durations
-    
-    df = df.iloc[:-CONFIG.FORECAST_HORIZON]
-    
+
+    # Remove last horizon+1 bars (no valid labels due to next bar open requirement)
+    df = df.iloc[:-(CONFIG.FORECAST_HORIZON + 1)]
+
     class_counts = df['target'].value_counts()
     total = len(df)
     for cls in [0, 1, 2]:
         count = class_counts.get(cls, 0)
         pct = count / total * 100 if total > 0 else 0
         print(f"    {['Flat', 'Up', 'Down'][cls]}: {count:,} ({pct:.1f}%)")
-    
+
     return df
 
 

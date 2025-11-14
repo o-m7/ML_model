@@ -5,9 +5,15 @@ on:
     - cron: '* * * * *'
   workflow_dispatch:
 
+# Prevent concurrent runs - only one signal generation at a time
+concurrency:
+  group: continuous-signal-worker
+  cancel-in-progress: false  # Don't cancel, let it finish
+
 jobs:
   generate-signals:
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # Kill if it takes >5 minutes
     
     steps:
       - name: Checkout code
@@ -25,7 +31,7 @@ jobs:
         run: python3 -m pip install requests pandas numpy
         
       - name: Install additional packages
-        run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn lightgbm boto3
+        run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn xgboost lightgbm boto3
         
       - name: Verify installation
         run: |
@@ -33,7 +39,16 @@ jobs:
           python3 -m pip list
           echo "=== Testing imports ==="
           python3 -c "import requests; import pandas; import numpy; print('All core modules working!')"
-      
+
+      - name: Run diagnostic checks
+        env:
+          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "=== Running System Diagnostics ==="
+          python3 diagnose_signal_generation.py || echo "⚠️  Diagnostic checks failed but continuing..."
+
       - name: Generate signals (standalone - no API required)
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}

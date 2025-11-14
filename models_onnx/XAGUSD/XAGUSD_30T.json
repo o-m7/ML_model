@@ -34,11 +34,11 @@
     "session_pos"
   ],
   "params": {
-    "tp": 1.5,
+    "tp": 2.0,
     "sl": 1.0,
-    "min_conf": 0.38,
-    "min_edge": 0.1,
-    "pos_size": 0.3
+    "min_conf": 0.32,
+    "min_edge": 0.06,
+    "pos_size": 0.4
   },
   "backtest_results": {
     "total_trades": 314,
