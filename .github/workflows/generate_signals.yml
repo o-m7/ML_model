@@ -2,7 +2,7 @@ name: Generate Trading Signals
 
 on:
   schedule:
-    - cron: '* * * * *'
+    - cron: '*/2 * * * *'  # Every 2 minutes instead of every 1 minute
   workflow_dispatch:
 
 # Prevent concurrent runs - only one signal generation at a time
