@@ -2,7 +2,7 @@ name: Generate Trading Signals
 
 on:
   schedule:
-    - cron: '* * * * *'
+    - cron: '* * * * *'  # Every minute
   workflow_dispatch:
 
 # Prevent concurrent runs - only one signal generation at a time
@@ -14,42 +14,58 @@ jobs:
   generate-signals:
     runs-on: ubuntu-latest
     timeout-minutes: 5  # Kill if it takes >5 minutes
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+        timeout-minutes: 2
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      
+        timeout-minutes: 2
+
       - name: Upgrade pip
         run: python3 -m pip install --upgrade pip
-        
+        timeout-minutes: 2
+
       - name: Install core packages
         run: python3 -m pip install requests pandas numpy
-        
+        timeout-minutes: 2
+
       - name: Install additional packages
         run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn xgboost lightgbm boto3
-        
+        timeout-minutes: 3
+
       - name: Verify installation
         run: |
           echo "=== Installed packages ==="
           python3 -m pip list
           echo "=== Testing imports ==="
           python3 -c "import requests; import pandas; import numpy; print('All core modules working!')"
+        timeout-minutes: 1
 
       - name: Run diagnostic checks
+        id: diagnostics
+        continue-on-error: true  # Don't fail workflow, but capture result
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
           echo "=== Running System Diagnostics ==="
-          python3 diagnose_signal_generation.py || echo "⚠️  Diagnostic checks failed but continuing..."
+          python3 diagnose_signal_generation.py
+        timeout-minutes: 2
 
-      - name: Generate signals (standalone - no API required)
+      - name: Report diagnostic status
+        if: steps.diagnostics.outcome == 'failure'
+        run: |
+          echo "⚠️  WARNING: Diagnostic checks failed!"
+          echo "Proceeding with signal generation, but errors may occur."
+
+      - name: Generate signals with retry logic
+        id: signal_generation
         env:
           POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -60,8 +76,83 @@ jobs:
           echo "SUPABASE_URL present: $([[ -n "$SUPABASE_URL" ]] && echo 'YES' || echo 'NO')"
           echo "SUPABASE_KEY present: $([[ -n "$SUPABASE_KEY" ]] && echo 'YES' || echo 'NO')"
           echo ""
-          echo "=== File Check ==="
-          ls -la signal_generator.py
-          echo ""
-          echo "=== Running Signal Generator ==="
-          python3 signal_generator.py
+          echo "=== Running Signal Generator with Retry Logic ==="
+
+          # Retry logic: 3 attempts with 5 second delay
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3..."
+            if python3 signal_generator.py; then
+              echo "✅ Signal generation succeeded on attempt $attempt"
+              exit 0
+            else
+              echo "❌ Signal generation failed on attempt $attempt"
+              if [ $attempt -lt 3 ]; then
+                echo "Retrying in 5 seconds..."
+                sleep 5
+              fi
+            fi
+          done
+
+          echo "❌ Signal generation failed after 3 attempts"
+          exit 1
+        timeout-minutes: 4
+
+      - name: Verify signal freshness
+        if: success()
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "=== Checking Signal Freshness ==="
+          python3 << 'EOF'
+          import os
+          from datetime import datetime, timedelta, timezone
+          from supabase import create_client
+
+          supabase = create_client(os.getenv('SUPABASE_URL'), os.getenv('SUPABASE_KEY'))
+
+          # Check most recent signals
+          response = supabase.table('live_signals').select('symbol,timeframe,timestamp').order('timestamp', desc=True).limit(5).execute()
+
+          if not response.data:
+              print("⚠️  WARNING: No signals found in database!")
+              exit(1)
+
+          now = datetime.now(timezone.utc)
+          latest = response.data[0]
+          latest_time = datetime.fromisoformat(latest['timestamp'].replace('Z', '+00:00'))
+          staleness = (now - latest_time).total_seconds() / 60
+
+          print(f"Most recent signal: {latest['symbol']} {latest['timeframe']}")
+          print(f"Timestamp: {latest_time}")
+          print(f"Age: {staleness:.1f} minutes")
+
+          # Fail if signals are more than 5 minutes old
+          if staleness > 5:
+              print(f"❌ ALERT: Signals are stale ({staleness:.1f} minutes old)")
+              exit(1)
+          else:
+              print(f"✅ Signals are fresh ({staleness:.1f} minutes old)")
+          EOF
+        timeout-minutes: 1
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: signal-generation-logs-${{ github.run_number }}
+          path: |
+            *.log
+            *.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Report final status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Signal generation pipeline completed successfully"
+          else
+            echo "❌ Signal generation pipeline encountered errors"
+            echo "Check uploaded artifacts for debugging"
+          fi

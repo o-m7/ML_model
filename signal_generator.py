@@ -78,6 +78,111 @@ MODELS = [
     ('XAUUSD', '15T'), ('XAUUSD', '1H'), ('XAUUSD', '30T'), ('XAUUSD', '5T'),
 ]
 
+# ============================================================================
+# RELIABILITY UTILITIES - Circuit Breaker & Timeout Wrapper
+# ============================================================================
+
+class CircuitBreaker:
+    """
+    Circuit breaker pattern to prevent cascading failures.
+    Opens after N failures, then enters half-open state after timeout.
+    """
+    def __init__(self, failure_threshold=3, timeout_seconds=60):
+        self.failure_threshold = failure_threshold
+        self.timeout_seconds = timeout_seconds
+        self.failure_count = 0
+        self.last_failure_time = None
+        self.state = 'closed'  # closed, open, half-open
+
+    def call(self, func, *args, **kwargs):
+        """Execute function with circuit breaker protection."""
+        if self.state == 'open':
+            # Check if we should try again
+            if time.time() - self.last_failure_time > self.timeout_seconds:
+                self.state = 'half-open'
+            else:
+                raise Exception(f"Circuit breaker OPEN (failures: {self.failure_count})")
+
+        try:
+            result = func(*args, **kwargs)
+            # Success - reset or close circuit
+            if self.state == 'half-open':
+                self.state = 'closed'
+                self.failure_count = 0
+            return result
+        except Exception as e:
+            self.failure_count += 1
+            self.last_failure_time = time.time()
+
+            if self.failure_count >= self.failure_threshold:
+                self.state = 'open'
+
+            raise e
+
+def validate_signal_data(signal_dict: dict) -> tuple[bool, str]:
+    """
+    Validate signal data before database write.
+    Returns (is_valid, error_message)
+    """
+    required_fields = ['symbol', 'timeframe', 'signal_type', 'estimated_entry',
+                       'tp_price', 'sl_price', 'confidence', 'edge', 'timestamp']
+
+    # Check required fields
+    for field in required_fields:
+        if field not in signal_dict:
+            return False, f"Missing required field: {field}"
+
+    # Check for NaN or invalid values
+    numeric_fields = ['estimated_entry', 'tp_price', 'sl_price', 'confidence', 'edge']
+    for field in numeric_fields:
+        value = signal_dict.get(field)
+        if value is None or (isinstance(value, float) and (np.isnan(value) or np.isinf(value))):
+            return False, f"Invalid value for {field}: {value}"
+
+    # Validate confidence and edge ranges
+    if not (0 <= signal_dict['confidence'] <= 1):
+        return False, f"Confidence out of range [0,1]: {signal_dict['confidence']}"
+
+    if not (-1 <= signal_dict['edge'] <= 1):
+        return False, f"Edge out of range [-1,1]: {signal_dict['edge']}"
+
+    # Validate timestamp freshness (should be within last 5 minutes)
+    try:
+        signal_time = datetime.fromisoformat(signal_dict['timestamp'].replace('Z', '+00:00'))
+        age_seconds = (datetime.now(timezone.utc) - signal_time).total_seconds()
+
+        if age_seconds > 300:  # 5 minutes
+            return False, f"Signal timestamp too old: {age_seconds:.0f} seconds"
+
+        if age_seconds < -60:  # Future timestamp (allow 1 min clock skew)
+            return False, f"Signal timestamp in future: {age_seconds:.0f} seconds"
+
+    except Exception as e:
+        return False, f"Invalid timestamp format: {e}"
+
+    # Validate signal_type
+    if signal_dict['signal_type'] not in ['long', 'short']:
+        return False, f"Invalid signal_type: {signal_dict['signal_type']}"
+
+    # Validate prices make sense
+    entry = signal_dict['estimated_entry']
+    tp = signal_dict['tp_price']
+    sl = signal_dict['sl_price']
+
+    if signal_dict['signal_type'] == 'long':
+        if not (sl < entry < tp):
+            return False, f"Invalid long prices: SL={sl} Entry={entry} TP={tp}"
+    else:  # short
+        if not (tp < entry < sl):
+            return False, f"Invalid short prices: TP={tp} Entry={entry} SL={sl}"
+
+    return True, ""
+
+# Global circuit breakers for different operations
+POLYGON_API_BREAKER = CircuitBreaker(failure_threshold=5, timeout_seconds=120)
+MODEL_INFERENCE_BREAKER = CircuitBreaker(failure_threshold=3, timeout_seconds=60)
+DATABASE_WRITE_BREAKER = CircuitBreaker(failure_threshold=5, timeout_seconds=90)
+
 # Ticker mapping for Polygon
 TICKER_MAP = {
     'XAUUSD': 'C:XAUUSD',
@@ -266,7 +371,15 @@ def process_symbol(symbol, timeframe):
             print(f"  🚫 {symbol} {timeframe}: {market_status['reason']}")
             return
 
-        raw_df = fetch_polygon_data(symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200))
+        # Fetch data with circuit breaker protection
+        try:
+            raw_df = POLYGON_API_BREAKER.call(
+                fetch_polygon_data,
+                symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200)
+            )
+        except Exception as api_error:
+            print(f"  ❌ {symbol} {timeframe}: Polygon API call failed - {api_error}")
+            return
         min_bars = MIN_BARS_REQUIRED.get(timeframe, 120)
         if raw_df is None or len(raw_df) < min_bars:
             got = 0 if raw_df is None else len(raw_df)
@@ -390,15 +503,32 @@ def process_symbol(symbol, timeframe):
             'confidence': float(confidence),
             'edge': float(edge),
             'entry_price': estimated_entry,  # Now includes costs
+            'estimated_entry': estimated_entry,  # Add for compatibility
+            'tp_price': tp_price,
+            'sl_price': sl_price,
             'take_profit': tp_price,
             'stop_loss': sl_price,
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'status': 'active',
             'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
         }
-        supabase.table('live_signals').insert(supabase_payload).execute()
 
-        print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {estimated_entry:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
+        # Validate signal data before write
+        is_valid, error_msg = validate_signal_data(supabase_payload)
+        if not is_valid:
+            print(f"  ❌ {symbol} {timeframe}: Signal validation FAILED - {error_msg}")
+            return
+
+        # Write to database with circuit breaker protection
+        def write_to_db():
+            return supabase.table('live_signals').insert(supabase_payload).execute()
+
+        try:
+            DATABASE_WRITE_BREAKER.call(write_to_db)
+            print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {estimated_entry:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
+        except Exception as db_error:
+            print(f"  ❌ {symbol} {timeframe}: Database write FAILED - {db_error}")
+            raise
     except Exception as e:
         print(f"  ❌ Error processing {symbol} {timeframe}: {e}")
         import traceback
