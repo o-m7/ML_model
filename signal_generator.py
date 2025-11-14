@@ -257,7 +257,9 @@ def process_symbol(symbol, timeframe):
         if timeframe == '4H':
             max_allowed = timedelta(hours=24)
         else:
-            max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
+            # Temporarily allow up to 8 hours staleness
+            # Handles Polygon API delays and low-volume periods (Asian session)
+            max_allowed = timedelta(hours=8)
             
         if staleness > max_allowed:
             print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")
