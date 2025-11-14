@@ -25,7 +25,7 @@ jobs:
         run: python3 -m pip install requests pandas numpy
         
       - name: Install additional packages
-        run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn lightgbm boto3
+        run: python3 -m pip install python-dotenv supabase pandas-ta scikit-learn xgboost lightgbm boto3
         
       - name: Verify installation
         run: |
