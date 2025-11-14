@@ -4,65 +4,75 @@ on:
   schedule:
     # Run every Sunday at 2 AM UTC
     - cron: '0 2 * * 0'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      symbol:
+        description: 'Symbol to retrain (or "all")'
+        required: false
+        default: 'all'
+      timeframe:
+        description: 'Timeframe to retrain (if specific symbol)'
+        required: false
 
 jobs:
-  retrain-models:
+  audit-and-retrain:
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # 3 hours max
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-      
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.12'
-      
-      - name: Download previous data (if exists)
-        continue-on-error: true
-        uses: dawidd6/action-download-artifact@v3
-        with:
-          workflow: weekly_retraining.yml
-          name: feature-store-data
-          path: feature_store/
-          if_no_artifact_found: warn
-      
+
       - name: Install dependencies
         run: |
           python3 -m pip install --upgrade pip
-          python3 -m pip install requests pandas numpy python-dotenv supabase scikit-learn lightgbm pyarrow fastparquet
-      
-      - name: Run automated retraining
+          python3 -m pip install pandas numpy scikit-learn lightgbm xgboost
+          python3 -m pip install python-dotenv supabase pyarrow
+
+      - name: Run signal audit
         env:
-          POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          echo "================================================================================================="
-          echo "WEEKLY MODEL RETRAINING STARTED"
-          echo "================================================================================================="
-          python3 automated_retraining.py
-          echo "================================================================================================="
-          echo "RETRAINING COMPLETE"
-          echo "================================================================================================="
-      
-      - name: Upload updated feature store (for next run)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: feature-store-data
-          path: feature_store/
-          retention-days: 14
-      
-      - name: Upload training logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: retraining-logs-${{ github.run_number }}
-          path: |
-            feature_store/
-            models_production/
-          retention-days: 30
+          echo "=== Signal Audit ==="
+          python signal_auditor.py --audit-all --days 30
+          python signal_auditor.py --recommend-retraining
 
+      - name: Retrain models (if recommended)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "=== Adaptive Retraining ==="
+          python adaptive_retraining.py --all --min-trades 50 || echo "Retraining skipped - insufficient data"
+
+      - name: Commit retrained models
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          # Add retrained models
+          git add models_production/ models_onnx/ || true
+          git add retraining_recommendations.json || true
+
+          # Commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No models were retrained"
+          else
+            git commit -m "Weekly model retraining - $(date +'%Y-%m-%d')"
+            git push
+          fi
+
+      - name: Create retraining report
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          echo "=== Retraining Report ==="
+          python performance_tracker.py --all --days 7 || echo "Performance report unavailable"
