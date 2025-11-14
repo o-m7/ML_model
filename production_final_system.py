@@ -57,9 +57,9 @@ class ProductionConfig:
         'XAGUSD': {
             '5T': {'tp': 1.4, 'sl': 1.0, 'min_conf': 0.40, 'min_edge': 0.12, 'pos_size': 0.2},
             '15T': {'tp': 1.5, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.3},
-            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.3},
-            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.15, 'pos_size': 0.18},
-            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.50, 'min_edge': 0.14, 'pos_size': 0.22},
+            '30T': {'tp': 2.0, 'sl': 1.0, 'min_conf': 0.32, 'min_edge': 0.06, 'pos_size': 0.4},  # FIXED: Lower thresholds for more trades
+            '1H': {'tp': 2.2, 'sl': 1.0, 'min_conf': 0.35, 'min_edge': 0.08, 'pos_size': 0.3},  # FIXED: Much lower thresholds
+            '4H': {'tp': 2.5, 'sl': 1.0, 'min_conf': 0.30, 'min_edge': 0.06, 'pos_size': 0.35},  # FIXED: Aggressive thresholds + higher pos_size
         },
         'EURUSD': {
             '5T': {'tp': 1.2, 'sl': 1.0, 'min_conf': 0.38, 'min_edge': 0.10, 'pos_size': 0.6},
