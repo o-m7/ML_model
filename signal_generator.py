@@ -69,13 +69,20 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Models to process (from your production system)
 # NOTE: 4H timeframes temporarily disabled - Polygon REST API doesn't provide real-time 4H forex data
+# FOCUS: Only XAUUSD and XAGUSD for now - other symbols disabled until further testing
 MODELS = [
+    # XAGUSD models (5 timeframes including 4H)
+    ('XAGUSD', '5T'), ('XAGUSD', '15T'), ('XAGUSD', '30T'), ('XAGUSD', '1H'), ('XAGUSD', '4H'),
+    # XAUUSD models (4 timeframes)
+    ('XAUUSD', '5T'), ('XAUUSD', '15T'), ('XAUUSD', '30T'), ('XAUUSD', '1H'),
+]
+
+# Disabled models - will re-enable after XAUUSD/XAGUSD are stable
+MODELS_DISABLED = [
     ('AUDUSD', '15T'), ('AUDUSD', '30T'), ('AUDUSD', '5T'), ('AUDUSD', '1H'),
     ('EURUSD', '30T'), ('EURUSD', '5T'),
     ('GBPUSD', '15T'), ('GBPUSD', '1H'), ('GBPUSD', '30T'), ('GBPUSD', '5T'),
     ('NZDUSD', '15T'), ('NZDUSD', '1H'), ('NZDUSD', '30T'), ('NZDUSD', '5T'),
-    ('XAGUSD', '15T'), ('XAGUSD', '1H'), ('XAGUSD', '30T'), ('XAGUSD', '5T'),
-    ('XAUUSD', '15T'), ('XAUUSD', '1H'), ('XAUUSD', '30T'), ('XAUUSD', '5T'),
 ]
 
 # Ticker mapping for Polygon
