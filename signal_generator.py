@@ -257,7 +257,9 @@ def process_symbol(symbol, timeframe):
         if timeframe == '4H':
             max_allowed = timedelta(hours=24)
         else:
-            max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
+            max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)  # Default: 2x timeframe
+            # For low-volume periods, allow up to 6 hours
+            max_allowed = max(max_allowed, timedelta(hours=6))
             
         if staleness > max_allowed:
             print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")

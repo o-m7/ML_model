@@ -78,7 +78,11 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     df['atr14'] = df['trange'].rolling(14).mean()
     df['atr20'] = df['trange'].rolling(20).mean()
 
-    returns = df['close'].pct_change()
+    # Basic returns features (needed by XAUUSD models)
+    df['returns'] = df['close'].pct_change()
+    df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
+
+    returns = df['returns']
     df['vol_10'] = returns.rolling(10).std()
     df['vol_20'] = returns.rolling(20).std()
     df['vol_ratio'] = df['vol_10'] / (df['vol_20'] + 1e-10)
@@ -89,13 +93,27 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     df['rsi14'] = ta.rsi(df['close'], length=14)
 
-    sma20 = df['close'].rolling(20).mean()
+    # SMA features (needed by XAUUSD models)
+    df['sma10'] = df['close'].rolling(10).mean()
+    df['sma20'] = df['close'].rolling(20).mean()
+    df['sma50'] = df['close'].rolling(50).mean()
+    df['close_vs_sma10'] = (df['close'] - df['sma10']) / (df['sma10'] + 1e-10)
+    df['close_vs_sma20'] = (df['close'] - df['sma20']) / (df['sma20'] + 1e-10)
+    df['close_vs_sma50'] = (df['close'] - df['sma50']) / (df['sma50'] + 1e-10)
+
+    # Bollinger Bands
+    sma20 = df['sma20']
     std20 = df['close'].rolling(20).std()
     df['bb_mid_20'] = sma20
     df['bb_up_20'] = sma20 + (2 * std20)
     df['bb_lo_20'] = sma20 - (2 * std20)
     df['bb_bbp_20'] = (df['close'] - df['bb_lo_20']) / (df['bb_up_20'] - df['bb_lo_20'] + 1e-10)
     df['bb_bw_20'] = (df['bb_up_20'] - df['bb_lo_20']) / (df['bb_mid_20'] + 1e-10)
+
+    # Bollinger Band aliases for XAUUSD models
+    df['bb_upper'] = df['bb_up_20']
+    df['bb_lower'] = df['bb_lo_20']
+    df['bb_position'] = (df['close'] - df['bb_lo_20']) / (df['bb_up_20'] - df['bb_lo_20'] + 1e-10)
 
     ema20 = df['close'].ewm(span=20, adjust=False).mean()
     ema50 = df['close'].ewm(span=50, adjust=False).mean()
@@ -141,10 +159,15 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
         df['macd'] = macd['MACD_12_26_9']
         df['macds'] = macd['MACDs_12_26_9']
         df['macdh'] = macd['MACDh_12_26_9']
+        # MACD aliases for XAUUSD models
+        df['macd_signal'] = df['macds']
+        df['macd_hist'] = df['macdh']
     else:
         df['macd'] = 0.0
         df['macds'] = 0.0
         df['macdh'] = 0.0
+        df['macd_signal'] = 0.0
+        df['macd_hist'] = 0.0
 
     stoch = ta.stoch(df['high'], df['low'], df['close'])
     if stoch is not None and not stoch.empty:

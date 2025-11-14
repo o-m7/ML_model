@@ -83,8 +83,10 @@ class ExecutionGuardrails:
             # During weekend, allow up to 72 hours staleness
             max_allowed_age = 72 * 3600
         else:
-            # During trading week: 2x timeframe + buffer (but min 30 minutes)
-            max_allowed_age = max(1800, (timeframe_minutes * 60 * 2) + self.max_data_age_seconds)
+            # During trading week: Allow up to 6 hours for Polygon delays
+            # Handles low-volume periods (Asian session, near close)
+            base_age = (timeframe_minutes * 60 * 2) + self.max_data_age_seconds
+            max_allowed_age = max(base_age, 6 * 3600)  # 6 hours = 21600 seconds
 
         if age_seconds > max_allowed_age:
             return GuardrailResult(
