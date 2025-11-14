@@ -83,9 +83,9 @@ class ExecutionGuardrails:
             # During weekend, allow up to 72 hours staleness
             max_allowed_age = 72 * 3600
         else:
-            # During trading week: Allow up to 8 hours for Polygon API delays
-            # Temporarily relaxed to handle delayed/low-volume periods
-            max_allowed_age = 8 * 3600  # 8 hours = 28800 seconds
+            # During trading week: 2x timeframe + buffer (but min 30 minutes)
+            # With timestamp-based API calls, data should be fresh
+            max_allowed_age = max(1800, (timeframe_minutes * 60 * 2) + self.max_data_age_seconds)
 
         if age_seconds > max_allowed_age:
             return GuardrailResult(
