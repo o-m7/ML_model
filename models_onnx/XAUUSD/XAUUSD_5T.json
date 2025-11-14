@@ -25,6 +25,13 @@
     "Down",
     "Up"
   ],
+  "params": {
+    "tp": 1.4,
+    "sl": 1.0,
+    "min_conf": 0.40,
+    "min_edge": 0.12,
+    "pos_size": 0.4
+  },
   "num_features": 18,
   "input_shape": [
     null,
