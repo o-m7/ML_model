@@ -175,19 +175,23 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
     
     end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(minutes=fetch_minutes * bars_to_fetch * 2)
-    
+
     params = {
         'adjusted': 'true',
         'sort': 'asc',
         'limit': 50000,
         'apiKey': POLYGON_API_KEY
     }
-    
+
     multiplier = fetch_minutes
     timespan = 'minute'
-    from_date = start_time.strftime('%Y-%m-%d')
-    to_date = end_time.strftime('%Y-%m-%d')
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
+
+    # CRITICAL FIX: Use timestamps instead of dates to get LIVE data
+    # Dates only give you data up to a cutoff time, not current minute
+    from_timestamp = int(start_time.timestamp() * 1000)  # milliseconds
+    to_timestamp = int(end_time.timestamp() * 1000)      # milliseconds
+
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_timestamp}/{to_timestamp}"
     
     try:
         response = requests.get(url, params=params, timeout=30)
@@ -257,9 +261,9 @@ def process_symbol(symbol, timeframe):
         if timeframe == '4H':
             max_allowed = timedelta(hours=24)
         else:
-            # Temporarily allow up to 8 hours staleness
-            # Handles Polygon API delays and low-volume periods (Asian session)
-            max_allowed = timedelta(hours=8)
+            # Normal staleness check: 2x the timeframe
+            # With timestamp-based API calls, data should be fresh
+            max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
             
         if staleness > max_allowed:
             print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")
