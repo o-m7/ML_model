@@ -2,13 +2,13 @@ name: Generate Trading Signals
 
 on:
   schedule:
-    - cron: '* * * * *'
+    - cron: '*/2 * * * *'  # Every 2 minutes instead of every 1 minute
   workflow_dispatch:
 
 # Prevent concurrent runs - only one signal generation at a time
 concurrency:
   group: continuous-signal-worker
-  cancel-in-progress: false  # Don't cancel, let it finish
+  cancel-in-progress: true  # Cancel old jobs if they're stuck or taking too long
 
 jobs:
   generate-signals:
