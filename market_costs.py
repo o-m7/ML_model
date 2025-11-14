@@ -118,11 +118,11 @@ MARKET_COSTS: Dict[str, SymbolCosts] = {
 
 TP_SL_PARAMS: Dict[str, Dict[str, SymbolTPSL]] = {
     'XAUUSD': {
-        '5T':  SymbolTPSL(tp_atr_mult=1.2, sl_atr_mult=1.0),  # R:R = 1.2:1
-        '15T': SymbolTPSL(tp_atr_mult=1.4, sl_atr_mult=1.0),  # R:R = 1.4:1
-        '30T': SymbolTPSL(tp_atr_mult=1.6, sl_atr_mult=1.0),  # R:R = 1.6:1
-        '1H':  SymbolTPSL(tp_atr_mult=1.8, sl_atr_mult=1.0),  # R:R = 1.8:1
-        '4H':  SymbolTPSL(tp_atr_mult=2.0, sl_atr_mult=1.0),  # R:R = 2.0:1
+        '5T':  SymbolTPSL(tp_atr_mult=1.4, sl_atr_mult=1.0),  # Matches trained model params
+        '15T': SymbolTPSL(tp_atr_mult=1.6, sl_atr_mult=1.0),  # Matches trained model params
+        '30T': SymbolTPSL(tp_atr_mult=2.0, sl_atr_mult=1.0),  # Matches trained model params
+        '1H':  SymbolTPSL(tp_atr_mult=2.2, sl_atr_mult=1.0),  # Matches trained model params
+        '4H':  SymbolTPSL(tp_atr_mult=2.5, sl_atr_mult=1.0),  # Theoretical (no 4H data yet)
     },
     'XAGUSD': {
         '5T':  SymbolTPSL(tp_atr_mult=1.4, sl_atr_mult=1.0),  # Optimized for high-frequency trading
