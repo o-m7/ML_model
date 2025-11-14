@@ -371,23 +371,45 @@ def process_symbol(symbol, timeframe):
         print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {estimated_entry:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
     except Exception as e:
         print(f"  ❌ Error processing {symbol} {timeframe}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise  # Re-raise to be caught by main() error handler
 
 
 def main():
     """Main execution - generates signals for all production models."""
     print("\n" + "="*80)
-    print(f"STANDALONE SIGNAL GENERATOR - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"STANDALONE SIGNAL GENERATOR - {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
     print("="*80 + "\n")
-    
+
     success_count = 0
+    error_count = 0
+    errors = []
+
     for symbol, timeframe in MODELS:
-        process_symbol(symbol, timeframe)
-        success_count += 1
+        try:
+            process_symbol(symbol, timeframe)
+            success_count += 1
+        except Exception as e:
+            error_count += 1
+            error_msg = f"{symbol} {timeframe}: {str(e)}"
+            errors.append(error_msg)
+            print(f"  ❌ ERROR: {error_msg}")
         time.sleep(0.5)
-    
+
     print("\n" + "="*80)
-    print(f"✅ Processed {success_count}/{len(MODELS)} models")
+    print(f"SIGNAL GENERATION COMPLETE")
+    print(f"  ✅ Success: {success_count}/{len(MODELS)}")
+    if error_count > 0:
+        print(f"  ❌ Errors: {error_count}")
+        print(f"\nError details:")
+        for err in errors:
+            print(f"  • {err}")
     print("="*80 + "\n")
+
+    # Exit with error code if any failures
+    if error_count > 0:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
