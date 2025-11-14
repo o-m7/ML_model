@@ -178,9 +178,9 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
     
     multiplier = fetch_minutes
     timespan = 'minute'
-    from_date = start_time.strftime('%Y-%m-%d')
-    to_date = end_time.strftime('%Y-%m-%d')
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
+    from_timestamp = int(start_time.timestamp() * 1000)
+    to_timestamp = int(end_time.timestamp() * 1000)
+    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_timestamp}/{to_timestamp}"
     
     try:
         response = requests.get(url, params=params, timeout=30)
