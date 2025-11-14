@@ -23,19 +23,28 @@ import pandas_ta as ta
 
 # Import ensemble predictor and news filter
 sys.path.insert(0, str(Path(__file__).parent))
+
+# Import BalancedModel FIRST before loading any pickled models
+from balanced_model import BalancedModel
+from production_final_system import BalancedModel as BalancedModelAlt  # Compatibility
+
 from ensemble_predictor import EnsemblePredictor
 from news_filter import is_in_blackout_window
-from production_final_system import BalancedModel
 from live_feature_utils import build_feature_frame
 
 # Import unified cost model and guardrails
 from market_costs import get_tp_sl, apply_entry_costs, calculate_tp_sl_prices, get_costs
 from execution_guardrails import get_moderate_guardrails
 
-# Ensure BalancedModel is available for pickle when this script runs as __main__
+# Ensure BalancedModel is available for pickle in all contexts
 _main_module = sys.modules.get("__main__")
 if _main_module is not None and not hasattr(_main_module, "BalancedModel"):
     setattr(_main_module, "BalancedModel", BalancedModel)
+
+# Also make it available under production_final_system module name for compatibility
+import production_final_system
+if not hasattr(production_final_system, "BalancedModel"):
+    setattr(production_final_system, "BalancedModel", BalancedModel)
 
 # Load environment
 load_dotenv()
