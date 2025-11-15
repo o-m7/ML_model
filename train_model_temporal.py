@@ -25,7 +25,7 @@ import pandas as pd
 from sklearn.metrics import classification_report
 import xgboost as xgb
 
-from shared_features import calculate_features
+from live_feature_utils import build_feature_frame
 
 
 def create_simple_labels(df, lookback=10):
@@ -69,7 +69,11 @@ def create_simple_labels(df, lookback=10):
 
     # Remove last lookback bars (no future data) and neutral bars
     df = df.iloc[:-lookback]
-    df = df[~neutral_mask[:-lookback]]
+    df = df[~neutral_mask[:-lookback]].copy()
+
+    # Ensure index is preserved for temporal splitting
+    if not isinstance(df.index, pd.DatetimeIndex):
+        print(f"   ⚠️  Warning: Index is not DatetimeIndex, temporal split may be incorrect")
 
     return df
 
@@ -238,9 +242,9 @@ def main():
     # Keep only OHLCV
     df = df[['open', 'high', 'low', 'close', 'volume']].copy()
 
-    # Calculate features
-    print(f"\n🔧 Calculating features...")
-    df = calculate_features(df)
+    # Calculate features (using SAME function as live trading and backtesting)
+    print(f"\n🔧 Calculating features (using live_feature_utils)...")
+    df = build_feature_frame(df)
     print(f"✅ Features calculated: {len(df):,} bars with {len(df.columns)} columns")
 
     # Create labels
