@@ -100,16 +100,11 @@ TICKER_MAP = {
 
 TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
 
-# Number of bars to keep per timeframe (balances history with API limits)
-BARS_PER_TF = {
-    '5T': 400,
-    '15T': 240,
-    '30T': 160,
-    '1H': 120,
-    '4H': 80,
-}
+# ALWAYS fetch maximum bars from Polygon (50,000 limit)
+# This provides rich historical context for feature calculations
+MAX_BARS_FROM_API = 50000
 
-# Minimum bars needed per timeframe
+# Minimum bars needed per timeframe (safety check)
 MIN_BARS_REQUIRED = {
     '5T': 120,
     '15T': 120,
@@ -160,23 +155,26 @@ def get_recent_sentiment(symbol: str) -> float:
         return 0.0  # Neutral on error
 
 
-def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
-    """Fetch OHLCV data from Polygon REST API (PAID PLAN - REAL-TIME)."""
+def fetch_polygon_data(symbol: str, timeframe: str):
+    """Fetch MAXIMUM OHLCV data from Polygon REST API (50,000 bars)."""
     ticker = TICKER_MAP.get(symbol, symbol)
     minutes = TIMEFRAME_MINUTES[timeframe]
 
     # For 4H, fetch 1H bars and resample (4H bars are stale on API)
     if timeframe == '4H':
         fetch_minutes = 60  # Fetch 1H bars
-        bars_to_fetch = bars * 8  # Need 8x more to ensure fresh data after resampling
+        # For 50k bars of 1H data = ~5.7 years of data
+        lookback_days = (MAX_BARS_FROM_API * fetch_minutes) // (60 * 24)
     else:
         fetch_minutes = minutes
-        bars_to_fetch = bars
+        # Calculate lookback to get MAX_BARS_FROM_API
+        lookback_days = (MAX_BARS_FROM_API * fetch_minutes) // (60 * 24)
 
     end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(minutes=fetch_minutes * bars_to_fetch * 2)
+    # Go back far enough to get 50k bars (with buffer for weekends/holidays)
+    start_time = end_time - timedelta(days=lookback_days + 30)
 
-    print(f"  🔍 [{end_time.strftime('%H:%M:%S')}] Fetching {timeframe} data (via {fetch_minutes}min bars)...")
+    print(f"  🔍 [{end_time.strftime('%H:%M:%S')}] Fetching {timeframe} data (via {fetch_minutes}min bars, ~{lookback_days} days)...")
 
     params = {
         'adjusted': 'true',
@@ -218,14 +216,16 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
                 'volume': 'sum'
             }).dropna()
 
-        # Debug: Log data freshness
+        # Debug: Log data freshness and volume
         if not df.empty:
             last_bar = df.index[-1]
             age_seconds = (end_time - last_bar).total_seconds()
             age_hours = age_seconds / 3600
-            print(f"  📊 Latest {timeframe} bar: {last_bar.strftime('%Y-%m-%d %H:%M UTC')} (age: {age_hours:.1f}h)")
+            total_bars = len(df)
+            first_bar = df.index[0]
+            print(f"  📊 Fetched {total_bars:,} bars: {first_bar.strftime('%Y-%m-%d')} to {last_bar.strftime('%Y-%m-%d %H:%M UTC')} (age: {age_hours:.1f}h)")
 
-        return df.tail(bars)
+        return df  # Return ALL data for maximum feature calculation context
         
     except Exception as e:
         print(f"  ❌ Error fetching {symbol}: {e}")
@@ -256,7 +256,8 @@ def process_symbol(symbol, timeframe):
             print(f"  🚫 {symbol} {timeframe}: BLACKOUT - {blackout_result['reason']}")
             return
 
-        raw_df = fetch_polygon_data(symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200))
+        # Fetch ALL available data (up to 50k bars) for rich feature context
+        raw_df = fetch_polygon_data(symbol, timeframe)
         min_bars = MIN_BARS_REQUIRED.get(timeframe, 120)
         if raw_df is None or len(raw_df) < min_bars:
             got = 0 if raw_df is None else len(raw_df)
