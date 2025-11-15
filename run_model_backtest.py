@@ -204,7 +204,7 @@ class IntegratedModelPredictor:
                 return 0
 
             # Prepare features in correct order
-            X = features_row[self.required_features].fillna(0).values.reshape(1, -1)
+            X = features_row[self.required_features].fillna(0).infer_objects(copy=False).values.reshape(1, -1)
 
             # Get prediction probabilities
             # Binary classification: [down_prob, up_prob]
