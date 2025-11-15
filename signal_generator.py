@@ -265,19 +265,47 @@ def process_symbol(symbol, timeframe):
             return
 
         last_bar_time = raw_df.index[-1]
-        staleness = datetime.now(timezone.utc) - last_bar_time
+        now = datetime.now(timezone.utc)
+        staleness = now - last_bar_time
+        staleness_minutes = staleness.total_seconds() / 60
 
-        # For 4H, allow up to 8 hours staleness (resampled from fresh 1H data)
-        if timeframe == '4H':
-            max_allowed = timedelta(hours=8)
-        else:
-            # Normal staleness check: 2x the timeframe
-            # With timestamp-based API calls, data should be fresh
-            max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
-            
-        if staleness > max_allowed:
-            print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")
+        # CRITICAL: Only generate signals on LIVE prices
+        # Forex market hours: Sunday 10pm UTC - Friday 10pm UTC (24/5)
+
+        # Check if market is closed
+        if now.weekday() == 5:  # Saturday - always closed
+            print(f"  ⚠️  {symbol} {timeframe}: SATURDAY - Market closed, skipping signal generation")
             return
+        elif now.weekday() == 6 and now.hour < 22:  # Sunday before 10pm UTC
+            print(f"  ⚠️  {symbol} {timeframe}: MARKET CLOSED - Sunday {now.hour}:00 UTC (opens 22:00)")
+            return
+        elif now.weekday() == 4 and now.hour >= 22:  # Friday after 10pm UTC
+            print(f"  ⚠️  {symbol} {timeframe}: MARKET CLOSING - Friday {now.hour}:00 UTC, skipping signals")
+            return
+
+        # Strict staleness thresholds for LIVE trading (1-2 bar widths max)
+        # These ensure signals are on current prices, not historical data
+        max_allowed_minutes = {
+            '5T': 15,    # 3 bars max (allows for API delays)
+            '15T': 30,   # 2 bars max
+            '30T': 45,   # 1.5 bars max
+            '1H': 90,    # 1.5 bars max
+            '4H': 300,   # 5 hours max (1.25 bars, much tighter than 8h before)
+        }.get(timeframe, 30)
+
+        # Absolute safety limit (varies by timeframe to accommodate bar widths)
+        # Intraday: max 2 hours, 4H: max 6 hours (to allow completion of 4H bars)
+        absolute_max = 360 if timeframe == '4H' else 120
+        if staleness_minutes > absolute_max:
+            print(f"  ❌ {symbol} {timeframe}: Data too stale ({staleness_minutes:.0f}min > {absolute_max}min absolute limit)")
+            return
+
+        if staleness_minutes > max_allowed_minutes:
+            print(f"  ⚠️  {symbol} {timeframe}: Stale data - {staleness_minutes:.0f}min old (max {max_allowed_minutes}min for LIVE trading)")
+            return
+
+        # Log exact freshness for monitoring
+        print(f"  ✅ {symbol} {timeframe}: Fresh data - {staleness_minutes:.1f}min old (last bar: {last_bar_time.strftime('%H:%M UTC')})")
 
         feature_df = build_feature_frame(raw_df)
         if feature_df.empty:
