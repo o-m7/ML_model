@@ -26,7 +26,6 @@ import pandas as pd
 # Import your modules
 from live_feature_utils import build_feature_frame
 from backtest_model import PropFirmBacktester, BacktestResults
-from ensemble_predictor import EnsemblePredictor
 
 
 def load_model(symbol: str, timeframe: str) -> tuple:
@@ -183,11 +182,13 @@ def prepare_features(price_df: pd.DataFrame, symbol: str) -> pd.DataFrame:
 class IntegratedModelPredictor:
     """
     Predictor that builds features on-the-fly during backtest.
+
+    Handles direct model prediction for binary classification models.
     """
 
     def __init__(
         self,
-        ensemble: EnsemblePredictor,
+        symbol: str,
         timeframe: str,
         full_price_df: pd.DataFrame,
         features_df: pd.DataFrame
@@ -196,20 +197,46 @@ class IntegratedModelPredictor:
         Initialize with pre-computed features.
 
         Args:
-            ensemble: EnsemblePredictor instance
+            symbol: Trading symbol
             timeframe: Timeframe (e.g., '15T')
             full_price_df: Full OHLCV dataframe
             features_df: Pre-computed features for all bars
         """
-        self.ensemble = ensemble
+        self.symbol = symbol
         self.timeframe = timeframe
         self.full_price_df = full_price_df
         self.features_df = features_df
+
+        # Load the model for this specific timeframe
+        self.model, self.required_features = self._load_model()
 
         # Create lookup dict for fast access
         self.features_lookup = {
             idx: row for idx, row in features_df.iterrows()
         }
+
+        print(f"   Loaded model with {len(self.required_features)} features")
+
+    def _load_model(self):
+        """Load the specific model for this timeframe."""
+        model_path = Path(f"models_rentec/{self.symbol}/{self.symbol}_{self.timeframe}.pkl")
+
+        if not model_path.exists():
+            raise FileNotFoundError(f"Model not found: {model_path}")
+
+        with open(model_path, "rb") as f:
+            model_data = pickle.load(f)
+
+        # Handle different pickle formats
+        if isinstance(model_data, dict):
+            model = model_data.get("model")
+            features = model_data.get("features", [])
+        else:
+            # Direct model object
+            model = model_data
+            features = []
+
+        return model, features
 
     def __call__(self, row: pd.Series) -> int:
         """
@@ -231,29 +258,43 @@ class IntegratedModelPredictor:
 
         features_row = self.features_lookup[timestamp]
 
-        # Get ensemble prediction
+        # Get prediction
         try:
-            # Convert to DataFrame with single row for ensemble
-            features_single = pd.DataFrame([features_row])
+            # Check we have required features
+            if not self.required_features:
+                # No feature list - can't predict
+                return 0
 
-            result = self.ensemble.ensemble_predict(
-                features_single,
-                strategy='performance_weighted'
-            )
+            missing = set(self.required_features) - set(features_row.index)
+            if missing:
+                # Missing required features
+                return 0
 
-            signal_type = result['signal']
-            confidence = result['confidence']
+            # Prepare features in correct order
+            X = features_row[self.required_features].fillna(0).values.reshape(1, -1)
 
-            # Apply confidence threshold
-            if signal_type == 'long' and confidence >= 0.50:
-                return 1
-            elif signal_type == 'short' and confidence >= 0.50:
-                return -1
+            # Get prediction probabilities
+            # Binary classification: [down_prob, up_prob]
+            probs = self.model.predict_proba(X)
+
+            if probs.shape[1] == 2:
+                # Binary classification
+                down_prob = float(probs[0, 0])
+                up_prob = float(probs[0, 1])
+
+                # Determine signal with confidence threshold
+                if up_prob > down_prob and up_prob >= 0.50:
+                    return 1  # Long
+                elif down_prob > up_prob and down_prob >= 0.50:
+                    return -1  # Short
+                else:
+                    return 0  # Flat
             else:
+                # Unexpected format
                 return 0
 
         except Exception as e:
-            # On error, return flat
+            # On error, return flat (silent to avoid spam)
             return 0
 
 
@@ -288,17 +329,8 @@ def run_integrated_backtest(
     print("=" * 80)
     print()
 
-    # 1. Load model/ensemble
-    print(f"Loading ensemble for {symbol}...")
-    try:
-        ensemble = EnsemblePredictor(symbol)
-        print(f"✅ Loaded ensemble with {len(ensemble.models)} models")
-    except Exception as e:
-        print(f"❌ Failed to load ensemble: {e}")
-        sys.exit(1)
-
-    # 2. Load historical data
-    print(f"\nLoading historical data...")
+    # 1. Load historical data
+    print(f"Loading historical data...")
     try:
         price_df = load_historical_data(symbol, timeframe, lookback_days)
         print(f"✅ Loaded {len(price_df):,} bars")
@@ -307,7 +339,7 @@ def run_integrated_backtest(
         print(f"❌ Failed to load data: {e}")
         sys.exit(1)
 
-    # 3. Build features
+    # 2. Build features
     print(f"\nBuilding features...")
     try:
         features_df = prepare_features(price_df, symbol)
@@ -323,16 +355,22 @@ def run_integrated_backtest(
         traceback.print_exc()
         sys.exit(1)
 
-    # 4. Create predictor
-    print(f"\nInitializing predictor...")
-    predict_func = IntegratedModelPredictor(
-        ensemble=ensemble,
-        timeframe=timeframe,
-        full_price_df=aligned_price_df,
-        features_df=features_df
-    )
+    # 3. Create predictor
+    print(f"\nInitializing model predictor for {symbol} {timeframe}...")
+    try:
+        predict_func = IntegratedModelPredictor(
+            symbol=symbol,
+            timeframe=timeframe,
+            full_price_df=aligned_price_df,
+            features_df=features_df
+        )
+    except Exception as e:
+        print(f"❌ Failed to initialize predictor: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
-    # 5. Run backtest
+    # 4. Run backtest
     print(f"\nRunning backtest...\n")
     backtester = PropFirmBacktester(
         price_df=aligned_price_df,
@@ -347,7 +385,7 @@ def run_integrated_backtest(
 
     results = backtester.run()
 
-    # 6. Export results
+    # 5. Export results
     print("\n📊 Exporting results...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = Path("backtest_results")
