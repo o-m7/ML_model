@@ -68,11 +68,10 @@ if not all([POLYGON_API_KEY, SUPABASE_URL, SUPABASE_KEY]):
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # Models to process (from your production system)
-# NOTE: 4H timeframes temporarily disabled - Polygon REST API doesn't provide real-time 4H forex data
 # FOCUS: Only XAUUSD and XAGUSD for now - other symbols disabled until further testing
 MODELS = [
-    # XAGUSD models (5 timeframes including 4H)
-    ('XAGUSD', '5T'), ('XAGUSD', '15T'), ('XAGUSD', '30T'), ('XAGUSD', '1H'), ('XAGUSD', '4H'),
+    # XAGUSD models (4 timeframes - no 4H model exists)
+    ('XAGUSD', '5T'), ('XAGUSD', '15T'), ('XAGUSD', '30T'), ('XAGUSD', '1H'),
     # XAUUSD models (4 timeframes)
     ('XAUUSD', '5T'), ('XAUUSD', '15T'), ('XAUUSD', '30T'), ('XAUUSD', '1H'),
 ]
@@ -98,7 +97,7 @@ TICKER_MAP = {
 # TP/SL Parameters now unified in market_costs.py
 # Old hardcoded SYMBOL_PARAMS removed to eliminate config drift
 
-TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
+TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60}
 
 # ALWAYS fetch maximum bars from Polygon (50,000 limit)
 # This provides rich historical context for feature calculations
@@ -110,7 +109,6 @@ MIN_BARS_REQUIRED = {
     '15T': 120,
     '30T': 120,
     '1H': 80,
-    '4H': 40,
 }
 
 # Cache for ensemble predictors (one per symbol)
@@ -207,15 +205,9 @@ def fetch_polygon_data(symbol: str, timeframe: str):
     ticker = TICKER_MAP.get(symbol, symbol)
     minutes = TIMEFRAME_MINUTES[timeframe]
 
-    # For 4H, fetch 1H bars and resample (4H bars are stale on API)
-    if timeframe == '4H':
-        fetch_minutes = 60  # Fetch 1H bars
-        # For 50k bars of 1H data = ~5.7 years of data
-        lookback_days = (MAX_BARS_FROM_API * fetch_minutes) // (60 * 24)
-    else:
-        fetch_minutes = minutes
-        # Calculate lookback to get MAX_BARS_FROM_API
-        lookback_days = (MAX_BARS_FROM_API * fetch_minutes) // (60 * 24)
+    # Calculate lookback to get MAX_BARS_FROM_API
+    fetch_minutes = minutes
+    lookback_days = (MAX_BARS_FROM_API * fetch_minutes) // (60 * 24)
 
     end_time = datetime.now(timezone.utc)
     # Go back far enough to get 50k bars (with buffer for weekends/holidays)
@@ -252,16 +244,6 @@ def fetch_polygon_data(symbol: str, timeframe: str):
         df = df.rename(columns={'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
         df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
         df = df.sort_index()
-        
-        # Resample to 4H if needed
-        if timeframe == '4H':
-            df = df.resample('4H').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna()
 
         # Debug: Log data freshness and volume
         if not df.empty:
@@ -337,12 +319,10 @@ def process_symbol(symbol, timeframe):
             '15T': 30,   # 2 bars max
             '30T': 45,   # 1.5 bars max
             '1H': 90,    # 1.5 bars max
-            '4H': 300,   # 5 hours max (1.25 bars, much tighter than 8h before)
         }.get(timeframe, 30)
 
-        # Absolute safety limit (varies by timeframe to accommodate bar widths)
-        # Intraday: max 2 hours, 4H: max 6 hours (to allow completion of 4H bars)
-        absolute_max = 360 if timeframe == '4H' else 120
+        # Absolute safety limit: max 2 hours for all intraday timeframes
+        absolute_max = 120
         if staleness_minutes > absolute_max:
             print(f"  ❌ {symbol} {timeframe}: Data too stale ({staleness_minutes:.0f}min > {absolute_max}min absolute limit)")
             return
