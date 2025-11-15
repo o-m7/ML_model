@@ -336,9 +336,9 @@ def get_moderate_guardrails() -> ExecutionGuardrails:
     return ExecutionGuardrails(
         max_spread_atr_ratio=0.15,
         max_data_age_seconds=300,
-        min_confidence=0.55,
+        min_confidence=0.50,  # Lowered from 0.55 to allow more valid signals
         max_latency_ms=250,
-        blocked_sessions=['overnight'],  # Avoid only overnight
+        blocked_sessions=[],  # Removed 'overnight' - forex is 24/5, only weekends blocked by check_session
         min_atr_pct=0.003,
         max_atr_pct=0.05,
     )

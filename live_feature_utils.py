@@ -78,6 +78,12 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     df['atr14'] = df['trange'].rolling(14).mean()
     df['atr20'] = df['trange'].rolling(20).mean()
 
+    # Volume features (needed by some models)
+    df['volume_sma20'] = df['volume'].rolling(20).mean()
+    df['volume_ratio'] = df['volume'] / (df['volume_sma20'] + 1e-10)
+    df['volume_ratio'].fillna(1.0, inplace=True)  # Handle edge cases
+    df['volume_sma20'].fillna(df['volume'].mean(), inplace=True)
+
     # Basic returns features (needed by XAUUSD models)
     df['returns'] = df['close'].pct_change()
     df['log_returns'] = np.log(df['close'] / df['close'].shift(1))
@@ -203,7 +209,7 @@ def build_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     feature_cols = ESSENTIAL_FEATURES + [
         'bb_up_20', 'bb_lo_20', 'ema20', 'ema50', 'ema200', 'macds',
         'pullback_time', 'vol_10', 'vol_20', 'vol_ratio', 'session_pos',
-        'sess_asia', 'sess_eu', 'sess_us'
+        'sess_asia', 'sess_eu', 'sess_us', 'volume_ratio', 'volume_sma20'
     ]
 
     df = df.dropna(subset=ESSENTIAL_FEATURES, how='any')

@@ -164,7 +164,7 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
     """Fetch OHLCV data from Polygon REST API (PAID PLAN - REAL-TIME)."""
     ticker = TICKER_MAP.get(symbol, symbol)
     minutes = TIMEFRAME_MINUTES[timeframe]
-    
+
     # For 4H, fetch 1H bars and resample (4H bars are stale on API)
     if timeframe == '4H':
         fetch_minutes = 60  # Fetch 1H bars
@@ -172,9 +172,11 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
     else:
         fetch_minutes = minutes
         bars_to_fetch = bars
-    
+
     end_time = datetime.now(timezone.utc)
     start_time = end_time - timedelta(minutes=fetch_minutes * bars_to_fetch * 2)
+
+    print(f"  🔍 [{end_time.strftime('%H:%M:%S')}] Fetching {timeframe} data (via {fetch_minutes}min bars)...")
 
     params = {
         'adjusted': 'true',
@@ -215,7 +217,14 @@ def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
                 'close': 'last',
                 'volume': 'sum'
             }).dropna()
-        
+
+        # Debug: Log data freshness
+        if not df.empty:
+            last_bar = df.index[-1]
+            age_seconds = (end_time - last_bar).total_seconds()
+            age_hours = age_seconds / 3600
+            print(f"  📊 Latest {timeframe} bar: {last_bar.strftime('%Y-%m-%d %H:%M UTC')} (age: {age_hours:.1f}h)")
+
         return df.tail(bars)
         
     except Exception as e:
@@ -256,10 +265,10 @@ def process_symbol(symbol, timeframe):
 
         last_bar_time = raw_df.index[-1]
         staleness = datetime.now(timezone.utc) - last_bar_time
-        
-        # For 4H, allow up to 24 hours staleness (S3 files update overnight)
+
+        # For 4H, allow up to 8 hours staleness (resampled from fresh 1H data)
         if timeframe == '4H':
-            max_allowed = timedelta(hours=24)
+            max_allowed = timedelta(hours=8)
         else:
             # Normal staleness check: 2x the timeframe
             # With timestamp-based API calls, data should be fresh
