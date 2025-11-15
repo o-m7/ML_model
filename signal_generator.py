@@ -155,8 +155,55 @@ def get_recent_sentiment(symbol: str) -> float:
         return 0.0  # Neutral on error
 
 
+def fetch_live_price(symbol: str) -> Optional[float]:
+    """
+    Fetch CURRENT LIVE price (latest tick) from Polygon.
+    This is separate from historical bars - ensures we trade on current price.
+    """
+    ticker = TICKER_MAP.get(symbol, symbol)
+
+    try:
+        # Get the absolute latest 1-minute bar (most current price available)
+        end_time = datetime.now(timezone.utc)
+        start_time = end_time - timedelta(minutes=5)  # Last 5 minutes to ensure we get data
+
+        from_timestamp = int(start_time.timestamp() * 1000)
+        to_timestamp = int(end_time.timestamp() * 1000)
+
+        url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/minute/{from_timestamp}/{to_timestamp}"
+
+        params = {
+            'adjusted': 'true',
+            'sort': 'desc',  # Descending to get latest first
+            'limit': 1,  # Only need the latest bar
+            'apiKey': POLYGON_API_KEY
+        }
+
+        response = requests.get(url, params=params, timeout=10)
+        data = response.json()
+
+        if 'results' in data and data['results'] and len(data['results']) > 0:
+            latest_bar = data['results'][0]
+            live_price = float(latest_bar['c'])  # Close of latest bar
+            bar_time = pd.to_datetime(latest_bar['t'], unit='ms', utc=True)
+
+            # Verify it's actually live (within last 5 minutes)
+            age_seconds = (datetime.now(timezone.utc) - bar_time).total_seconds()
+            if age_seconds > 300:  # More than 5 minutes old
+                print(f"  ⚠️  Live price is {age_seconds:.0f}s old, may not be current")
+
+            return live_price
+        else:
+            print(f"  ⚠️  No live price data available for {symbol}")
+            return None
+
+    except Exception as e:
+        print(f"  ❌ Error fetching live price for {symbol}: {e}")
+        return None
+
+
 def fetch_polygon_data(symbol: str, timeframe: str):
-    """Fetch MAXIMUM OHLCV data from Polygon REST API (50,000 bars)."""
+    """Fetch MAXIMUM OHLCV data from Polygon REST API (50,000 bars) for FEATURE CALCULATION."""
     ticker = TICKER_MAP.get(symbol, symbol)
     minutes = TIMEFRAME_MINUTES[timeframe]
 
@@ -358,9 +405,29 @@ def process_symbol(symbol, timeframe):
         if pd.isna(atr) or atr == 0:
             atr = float(raw_df['close'].iloc[-1]) * 0.02
 
-        # IMPORTANT: Entry will be at next bar open (unknown at signal time)
-        # Use current close as proxy and apply realistic entry costs
-        current_close = float(raw_df['close'].iloc[-1])
+        # CRITICAL: Fetch LIVE current price for signal execution
+        # Historical data is used for features/patterns, live price for entry
+        print(f"  💰 Fetching LIVE current price...")
+        live_price = fetch_live_price(symbol)
+
+        if live_price is None:
+            # Fallback to last historical bar if live price unavailable
+            print(f"  ⚠️  Using last historical bar price as fallback")
+            live_price = float(raw_df['close'].iloc[-1])
+            historical_price = live_price
+        else:
+            historical_price = float(raw_df['close'].iloc[-1])
+            price_diff = abs(live_price - historical_price)
+            price_diff_pct = (price_diff / historical_price) * 100
+
+            print(f"  📊 Historical price: ${historical_price:.2f} (from {raw_df.index[-1].strftime('%H:%M')})")
+            print(f"  💵 LIVE price: ${live_price:.2f} (difference: ${price_diff:.2f}, {price_diff_pct:.2f}%)")
+
+            # Safety check: if prices diverge too much, something is wrong
+            if price_diff_pct > 5:  # More than 5% difference is suspicious
+                print(f"  ❌ WARNING: Live vs historical price differs by {price_diff_pct:.2f}% - possible data issue")
+
+        current_close = live_price  # Use LIVE price for entry
         last_bar_time = raw_df.index[-1]
 
         # Apply execution guardrails
