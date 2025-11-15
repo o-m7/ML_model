@@ -27,6 +27,12 @@ import pandas as pd
 from live_feature_utils import build_feature_frame
 from backtest_model import PropFirmBacktester, BacktestResults
 
+# Import custom model classes for unpickling
+try:
+    from balanced_model import BalancedModel
+except ImportError:
+    BalancedModel = None
+
 
 def load_model(symbol: str, timeframe: str) -> tuple:
     """
@@ -207,11 +213,26 @@ class IntegratedModelPredictor:
             X = features_row[self.required_features].fillna(0).infer_objects(copy=False).values.reshape(1, -1)
 
             # Get prediction probabilities
-            # Binary classification: [down_prob, up_prob]
             probs = self.model.predict_proba(X)
 
-            if probs.shape[1] == 2:
-                # Binary classification
+            if probs.shape[1] == 3:
+                # 3-class model: [flat_prob, long_prob, short_prob]
+                flat_prob = float(probs[0, 0])
+                long_prob = float(probs[0, 1])
+                short_prob = float(probs[0, 2])
+
+                # Return direction with highest probability if above threshold
+                max_prob = max(flat_prob, long_prob, short_prob)
+
+                if long_prob == max_prob and long_prob >= 0.40:
+                    return 1  # Long
+                elif short_prob == max_prob and short_prob >= 0.40:
+                    return -1  # Short
+                else:
+                    return 0  # Flat
+
+            elif probs.shape[1] == 2:
+                # Binary classification: [down_prob, up_prob]
                 down_prob = float(probs[0, 0])
                 up_prob = float(probs[0, 1])
 
