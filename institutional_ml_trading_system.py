@@ -61,6 +61,23 @@ print("=" * 80)
 # SECTION 1: CONFIGURATION & DATA STRUCTURES
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def to_serializable(obj):
+    """Convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, (np.bool_, np.bool8)):
+        return bool(obj)
+    if isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    if isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, dict):
+        return {k: to_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [to_serializable(item) for item in obj]
+    return obj
+
+
 @dataclass
 class TradingConfig:
     """Configuration for trading strategy and risk management."""
@@ -76,22 +93,27 @@ class TradingConfig:
     commission_pct: float = 0.0  # Commission if any
 
     # Risk management
+    initial_capital: float = 25000.0  # Starting capital
     max_position_size: float = 1.0  # Max lots/units
-    risk_per_trade_pct: float = 0.02  # 2% risk per trade
+    risk_per_trade_pct: float = 0.01  # 1% risk per trade (reduced from 2% for better risk management)
     max_daily_drawdown_pct: float = 0.05  # 5% max daily DD
 
     # Model parameters
-    lookback_bars: int = 5  # Bars to predict forward
-    min_profit_threshold_pct: float = 0.0002  # 0.02% minimum move to label as profitable
+    lookback_bars: int = 8  # Bars to predict forward (increased for better signal-to-noise)
+    min_profit_threshold_pct: float = 0.0001  # 0.01% minimum move (relaxed from 0.02%)
 
     # Threshold optimization
-    signal_quantile: float = 0.90  # Top 10% of signals
+    signal_quantile: float = 0.85  # Top 15% of signals (relaxed from 10% for more opportunities)
     min_trades_per_segment: int = 20
+
+    # Quote-based filtering
+    max_spread_percentile: float = 0.90  # Skip trades when spread > 90th percentile
+    min_quote_count: int = 3  # Minimum quotes per bar for trade execution
 
     # Viability criteria (what makes a strategy acceptable)
     min_profit_factor: float = 1.5
     min_sharpe_ratio: float = 0.5
-    max_acceptable_drawdown: float = 0.15  # 15%
+    max_acceptable_drawdown: float = 0.06  # 6% (tightened from 15%)
 
     def get_spread(self, symbol: str) -> float:
         """Get spread for given symbol."""
@@ -130,15 +152,15 @@ class PerformanceMetrics:
     annualized_return_pct: float = 0.0
 
     def to_dict(self) -> Dict:
-        """Convert to dictionary."""
+        """Convert to dictionary with JSON-serializable types."""
         return {
-            'total_trades': self.total_trades,
-            'win_rate': round(self.win_rate, 3),
-            'profit_factor': round(self.profit_factor, 3),
-            'sharpe_ratio': round(self.sharpe_ratio, 3),
-            'max_drawdown_pct': round(self.max_drawdown_pct, 3),
-            'net_profit': round(self.net_profit, 2),
-            'total_return_pct': round(self.total_return_pct, 3)
+            'total_trades': int(self.total_trades),
+            'win_rate': float(round(self.win_rate, 3)),
+            'profit_factor': float(round(self.profit_factor, 3)),
+            'sharpe_ratio': float(round(self.sharpe_ratio, 3)),
+            'max_drawdown_pct': float(round(self.max_drawdown_pct, 3)),
+            'net_profit': float(round(self.net_profit, 2)),
+            'total_return_pct': float(round(self.total_return_pct, 3))
         }
 
     def is_viable(self, config: TradingConfig) -> bool:
@@ -542,25 +564,26 @@ class EnsembleModelTrainer:
 
     def train_xgboost(self, X_train: np.ndarray, y_train: np.ndarray,
                      X_val: np.ndarray, y_val: np.ndarray) -> xgb.XGBClassifier:
-        """Train XGBoost model with early stopping."""
+        """Train XGBoost model with early stopping and improved regularization."""
         print("\n🌲 Training XGBoost...")
 
         # Calculate scale_pos_weight for imbalance
         scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
         model = xgb.XGBClassifier(
-            n_estimators=500,
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            gamma=1.0,
-            reg_alpha=0.1,
-            reg_lambda=1.0,
+            n_estimators=300,  # Reduced from 500 to prevent overfitting
+            max_depth=4,  # Reduced from 6 for better generalization
+            learning_rate=0.03,  # Reduced for smoother learning
+            subsample=0.75,  # Slightly more aggressive subsampling
+            colsample_bytree=0.75,  # More feature subsampling
+            gamma=2.0,  # Increased minimum loss reduction
+            reg_alpha=0.3,  # Increased L1 regularization
+            reg_lambda=2.0,  # Increased L2 regularization
+            min_child_weight=5,  # Prevent overfitting on small samples
             scale_pos_weight=scale_pos_weight,
             random_state=42,
             n_jobs=-1,
-            early_stopping_rounds=50
+            early_stopping_rounds=30  # More patience for early stopping
         )
 
         model.fit(
@@ -580,20 +603,23 @@ class EnsembleModelTrainer:
 
     def train_lightgbm(self, X_train: np.ndarray, y_train: np.ndarray,
                       X_val: np.ndarray, y_val: np.ndarray) -> lgb.LGBMClassifier:
-        """Train LightGBM model."""
+        """Train LightGBM model with improved regularization."""
         print("\n🌟 Training LightGBM...")
 
         # Calculate scale_pos_weight
         scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
         model = lgb.LGBMClassifier(
-            n_estimators=500,
-            max_depth=6,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            reg_alpha=0.1,
-            reg_lambda=1.0,
+            n_estimators=300,  # Reduced from 500
+            max_depth=4,  # Reduced from 6 for better generalization
+            num_leaves=15,  # Control tree complexity
+            learning_rate=0.03,  # Reduced for smoother learning
+            subsample=0.75,  # More aggressive subsampling
+            colsample_bytree=0.75,  # More feature subsampling
+            reg_alpha=0.3,  # Increased L1 regularization
+            reg_lambda=2.0,  # Increased L2 regularization
+            min_child_samples=20,  # Minimum samples per leaf
+            min_split_gain=0.1,  # Minimum gain to split
             scale_pos_weight=scale_pos_weight,
             random_state=42,
             n_jobs=-1,
@@ -603,7 +629,7 @@ class EnsembleModelTrainer:
         model.fit(
             X_train, y_train,
             eval_set=[(X_val, y_val)],
-            callbacks=[lgb.early_stopping(50, verbose=False)]
+            callbacks=[lgb.early_stopping(30, verbose=False)]
         )
 
         # Feature importance
@@ -617,7 +643,7 @@ class EnsembleModelTrainer:
 
     def train_mlp(self, X_train: np.ndarray, y_train: np.ndarray,
                  X_val: np.ndarray, y_val: np.ndarray) -> MLPClassifier:
-        """Train Neural Network (MLP)."""
+        """Train Neural Network (MLP) with improved architecture and regularization."""
         print("\n🧠 Training Neural Network (MLP)...")
 
         # Scale features for neural network
@@ -625,15 +651,16 @@ class EnsembleModelTrainer:
         X_val_scaled = self.scaler.transform(X_val)
 
         model = MLPClassifier(
-            hidden_layer_sizes=(100, 50),
+            hidden_layer_sizes=(64, 32),  # Smaller network to prevent overfitting
             activation='relu',
             solver='adam',
-            alpha=0.001,
-            batch_size=256,
-            learning_rate_init=0.001,
-            max_iter=200,
+            alpha=0.01,  # Increased L2 regularization (from 0.001)
+            batch_size=128,  # Smaller batch size for better generalization
+            learning_rate_init=0.0005,  # Reduced learning rate
+            max_iter=150,  # Reduced iterations
             early_stopping=True,
-            validation_fraction=0.1,
+            validation_fraction=0.15,  # More data for validation
+            n_iter_no_change=15,  # More patience before stopping
             random_state=42,
             verbose=False
         )
@@ -928,15 +955,39 @@ class RealisticBacktester:
         spread = self.config.get_spread(self.config.symbol)
         slippage_pct = self.config.slippage_pct
 
+        # Check if quote features are available for filtering
+        has_quote_features = 'q_spread_mean' in df.columns and 'q_quote_count' in df.columns
+        if has_quote_features:
+            # Calculate spread percentile threshold for filtering
+            spread_threshold = df['q_spread_mean'].quantile(self.config.max_spread_percentile)
+            print(f"   Quote-based filtering enabled:")
+            print(f"     - Max spread threshold: {spread_threshold:.4f}")
+            print(f"     - Min quote count: {self.config.min_quote_count}")
+
         trades = []
-        equity = 10000  # Starting capital
+        equity = self.config.initial_capital  # Starting capital from config
         equity_curve = [equity]
         peak_equity = equity
         max_dd = 0
+        filtered_by_spread = 0
+        filtered_by_liquidity = 0
 
         i = 0
         while i < len(df) - 1:
             if df.loc[i, 'signal'] == 1:
+                # Apply quote-based filters if available
+                if has_quote_features:
+                    # Skip if spread is too wide
+                    if df.loc[i, 'q_spread_mean'] > spread_threshold:
+                        filtered_by_spread += 1
+                        i += 1
+                        continue
+
+                    # Skip if insufficient liquidity (too few quotes)
+                    if df.loc[i, 'q_quote_count'] < self.config.min_quote_count:
+                        filtered_by_liquidity += 1
+                        i += 1
+                        continue
                 # Enter long trade
                 entry_price = df.loc[i, 'close']
                 entry_cost = spread + (entry_price * slippage_pct)
@@ -983,6 +1034,14 @@ class RealisticBacktester:
             else:
                 i += 1
 
+        # Report filtering stats
+        if has_quote_features and (filtered_by_spread > 0 or filtered_by_liquidity > 0):
+            total_signals = (df['signal'] == 1).sum()
+            print(f"   Filtered signals:")
+            print(f"     - By spread: {filtered_by_spread} ({filtered_by_spread/total_signals*100:.1f}%)")
+            print(f"     - By liquidity: {filtered_by_liquidity} ({filtered_by_liquidity/total_signals*100:.1f}%)")
+            print(f"     - Executed: {len(trades)} ({len(trades)/total_signals*100:.1f}%)")
+
         # Calculate metrics
         if len(trades) > 0:
             trades_df = pd.DataFrame(trades)
@@ -1019,7 +1078,7 @@ class RealisticBacktester:
             else:
                 sortino = 0
 
-            total_return_pct = (equity - 10000) / 10000
+            total_return_pct = (equity - self.config.initial_capital) / self.config.initial_capital
 
             metrics = PerformanceMetrics(
                 total_trades=total_trades,
@@ -1211,12 +1270,12 @@ class WalkForwardValidator:
 
             # Store results
             result = {
-                'segment': seg_num,
-                'train_size': len(train_df),
-                'test_size': len(test_df),
-                'threshold': threshold,
+                'segment': int(seg_num),
+                'train_size': int(len(train_df)),
+                'test_size': int(len(test_df)),
+                'threshold': float(threshold),
                 'metrics': metrics.to_dict(),
-                'is_viable': metrics.is_viable(self.config)
+                'is_viable': bool(metrics.is_viable(self.config))
             }
             all_results.append(result)
 
