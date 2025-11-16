@@ -67,10 +67,11 @@ def fetch_day_from_s3(date: datetime, ticker: str) -> pd.DataFrame:
             return pd.DataFrame()
 
         # Convert timestamp (Polygon uses milliseconds)
+        # Use errors='coerce' to handle corrupt timestamps (converts to NaT)
         if 'window_start' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['window_start'], unit='ms', utc=True)
+            df['timestamp'] = pd.to_datetime(df['window_start'], unit='ms', utc=True, errors='coerce')
         elif 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True, errors='coerce')
 
         # Rename columns to standard OHLCV
         df = df.rename(columns={
@@ -84,6 +85,15 @@ def fetch_day_from_s3(date: datetime, ticker: str) -> pd.DataFrame:
 
         # Keep only required columns
         df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
+
+        # Count corrupt rows before dropping
+        corrupt_count = df['timestamp'].isna().sum()
+        if corrupt_count > 0:
+            # Only report if significant (>1% of rows)
+            total_rows = len(df)
+            if corrupt_count / total_rows > 0.01:
+                print(f"    ⚠️  Skipped {corrupt_count}/{total_rows} rows with corrupt timestamps")
+
         df = df.dropna()
 
         return df
@@ -91,7 +101,10 @@ def fetch_day_from_s3(date: datetime, ticker: str) -> pd.DataFrame:
     except S3_CLIENT.exceptions.NoSuchKey:
         return pd.DataFrame()  # File doesn't exist
     except Exception as e:
-        print(f"    ⚠️  Error: {e}")
+        # Only print non-timestamp errors
+        error_msg = str(e)
+        if "Out of bounds nanosecond timestamp" not in error_msg:
+            print(f"    ⚠️  Error: {e}")
         return pd.DataFrame()
 
 
