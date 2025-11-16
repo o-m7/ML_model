@@ -335,28 +335,20 @@ def download_and_process_symbol(symbol, start_date, end_date):
 
         print(f"\r  ✓ Resampled: {len(df_tf):,} bars")
 
-        # Calculate features using TA-Lib
-        print(f"  ⏳ Calculating TA-Lib features...", end='', flush=True)
-        df_features = calculate_talib_features(df_tf)
+        # Ensure only OHLCV columns (training system calculates features itself)
+        df_ohlcv = df_tf[['open', 'high', 'low', 'close', 'volume']].copy()
 
-        if df_features is None or df_features.empty:
-            print(f"\r  ❌ Feature calculation failed")
-            continue
-
-        feature_count = len(df_features.columns)
-        print(f"\r  ✓ Calculated {feature_count} TA-Lib features for {len(df_features):,} bars")
-
-        # Save to parquet
+        # Save raw OHLCV to parquet (no features - citadel_training_system calculates them)
         output_dir = FEATURE_STORE_DIR / symbol
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_file = output_dir / f"{symbol}_{timeframe}.parquet"
 
-        print(f"  ⏳ Saving to parquet...", end='', flush=True)
-        df_features.to_parquet(output_file, compression='snappy')
+        print(f"  ⏳ Saving OHLCV to parquet...", end='', flush=True)
+        df_ohlcv.to_parquet(output_file, compression='snappy')
 
         file_size_mb = output_file.stat().st_size / 1024 / 1024
-        print(f"\r  ✓ Saved: {output_file.name} ({file_size_mb:.1f} MB)")
+        print(f"\r  ✓ Saved: {output_file.name} ({file_size_mb:.1f} MB, {len(df_ohlcv):,} bars)")
 
     print(f"\n✅ {symbol} complete!\n")
 
@@ -378,13 +370,13 @@ def main():
         symbols_to_process = [args.symbol]
 
     print("\n" + "="*80)
-    print("HISTORICAL DATA DOWNLOAD & TA-LIB FEATURE GENERATION")
+    print("HISTORICAL DATA DOWNLOAD (RAW OHLCV)")
     print("="*80)
     print(f"Source: Massive.com S3 (Polygon data)")
     print(f"Date range: {args.start_date} to {args.end_date}")
     print(f"Symbols: {', '.join(symbols_to_process)}")
     print(f"Timeframes: {', '.join(TIMEFRAMES)}")
-    print(f"Features: TA-Lib technical indicators")
+    print(f"Output: Raw OHLCV only (features calculated by training system)")
     print("="*80)
 
     # Process each symbol
