@@ -99,12 +99,14 @@ class TradingConfig:
     max_daily_drawdown_pct: float = 0.05  # 5% max daily DD
 
     # Model parameters
-    lookback_bars: int = 8  # Bars to predict forward (increased for better signal-to-noise)
-    min_profit_threshold_pct: float = 0.0001  # 0.01% minimum move (relaxed from 0.02%)
+    lookback_bars: int = 5  # Bars to predict forward (15min * 5 = 75 min holding period)
+    min_profit_threshold_pct: float = 0.0  # No additional threshold - just need to beat costs
 
     # Threshold optimization
-    signal_quantile: float = 0.75  # Top 25% of signals (relaxed for more opportunities)
-    min_trades_per_segment: int = 20
+    use_fixed_threshold: bool = True  # Use fixed threshold instead of quantile
+    fixed_threshold: float = 0.55  # Trade when model predicts >55% probability
+    signal_quantile: float = 0.70  # Fallback: Top 30% of signals if using quantile method
+    min_trades_per_segment: int = 10  # Reduced from 20
 
     # Quote-based filtering (disabled by default - set to False to skip filtering)
     enable_quote_filtering: bool = False  # Enable/disable quote-based filters
@@ -433,11 +435,11 @@ class LabelEngineer:
         # Account for spread and slippage
         total_cost_pct = (spread / df['close']) + config.slippage_pct + config.commission_pct
 
-        # Profitable long: forward return exceeds costs + minimum threshold
-        profitable_long = forward_return_long > (total_cost_pct + min_profit_pct)
+        # Profitable long: forward return exceeds costs (NO additional threshold - just beat costs!)
+        profitable_long = forward_return_long > total_cost_pct
 
-        # Profitable short: short return exceeds costs + minimum threshold
-        profitable_short = forward_return_short > (total_cost_pct + min_profit_pct)
+        # Profitable short: short return exceeds costs
+        profitable_short = forward_return_short > total_cost_pct
 
         # Create binary labels
         # 1 = Long opportunity, 0 = Short opportunity or no trade
@@ -454,16 +456,28 @@ class LabelEngineer:
         # Remove last N bars (no forward data)
         df = df.iloc[:-lookback].copy()
 
-        # Report label distribution
+        # Report label distribution with detailed stats
         long_count = (labels == 1).sum()
         short_neutral_count = (labels == 0).sum()
         total = len(labels)
 
-        print(f"\n📊 Label Distribution (Profit-Aligned):")
+        # Calculate actual profitability if we traded all labeled opportunities
+        long_returns = forward_return_long[profitable_long[:-lookback]]
+        if len(long_returns) > 0:
+            avg_long_return = long_returns.mean()
+            max_long_return = long_returns.max()
+        else:
+            avg_long_return = 0
+            max_long_return = 0
+
+        print(f"\n📊 Label Distribution (Profit-Aligned - Beat Costs Only):")
+        print(f"   Total bars:          {total:,}")
         print(f"   Long opportunities:  {long_count:,} ({long_count/total*100:.1f}%)")
         print(f"   Short/Neutral:       {short_neutral_count:,} ({short_neutral_count/total*100:.1f}%)")
-        print(f"   Min profit threshold: {min_profit_pct*100:.3f}%")
-        print(f"   Avg total cost:       {df['total_cost_pct'].mean()*100:.3f}%")
+        print(f"   Avg total cost:      {df['total_cost_pct'].mean()*100:.4f}%")
+        print(f"   Avg long return:     {avg_long_return*100:.4f}%")
+        print(f"   Max long return:     {max_long_return*100:.4f}%")
+        print(f"   Lookback bars:       {lookback}")
 
         return df
 
@@ -572,19 +586,19 @@ class EnsembleModelTrainer:
         scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
         model = xgb.XGBClassifier(
-            n_estimators=300,  # Reduced from 500 to prevent overfitting
-            max_depth=4,  # Reduced from 6 for better generalization
-            learning_rate=0.03,  # Reduced for smoother learning
-            subsample=0.75,  # Slightly more aggressive subsampling
-            colsample_bytree=0.75,  # More feature subsampling
-            gamma=2.0,  # Increased minimum loss reduction
-            reg_alpha=0.3,  # Increased L1 regularization
-            reg_lambda=2.0,  # Increased L2 regularization
-            min_child_weight=5,  # Prevent overfitting on small samples
+            n_estimators=200,  # Moderate complexity
+            max_depth=5,  # Balanced depth for gold intraday patterns
+            learning_rate=0.05,  # Moderate learning rate
+            subsample=0.8,  # Standard subsampling
+            colsample_bytree=0.8,  # Standard feature sampling
+            gamma=1.0,  # Moderate complexity control
+            reg_alpha=0.1,  # Light L1 regularization
+            reg_lambda=1.0,  # Light L2 regularization
+            min_child_weight=3,  # Allow learning from smaller patterns
             scale_pos_weight=scale_pos_weight,
             random_state=42,
             n_jobs=-1,
-            early_stopping_rounds=30  # More patience for early stopping
+            early_stopping_rounds=50
         )
 
         model.fit(
@@ -611,16 +625,16 @@ class EnsembleModelTrainer:
         scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
         model = lgb.LGBMClassifier(
-            n_estimators=300,  # Reduced from 500
-            max_depth=4,  # Reduced from 6 for better generalization
-            num_leaves=15,  # Control tree complexity
-            learning_rate=0.03,  # Reduced for smoother learning
-            subsample=0.75,  # More aggressive subsampling
-            colsample_bytree=0.75,  # More feature subsampling
-            reg_alpha=0.3,  # Increased L1 regularization
-            reg_lambda=2.0,  # Increased L2 regularization
+            n_estimators=200,  # Moderate complexity
+            max_depth=5,  # Balanced depth
+            num_leaves=31,  # Standard leaf count
+            learning_rate=0.05,  # Moderate learning rate
+            subsample=0.8,  # Standard subsampling
+            colsample_bytree=0.8,  # Standard feature sampling
+            reg_alpha=0.1,  # Light L1 regularization
+            reg_lambda=1.0,  # Light L2 regularization
             min_child_samples=20,  # Minimum samples per leaf
-            min_split_gain=0.1,  # Minimum gain to split
+            min_split_gain=0.01,  # Allow more splits
             scale_pos_weight=scale_pos_weight,
             random_state=42,
             n_jobs=-1,
@@ -652,16 +666,16 @@ class EnsembleModelTrainer:
         X_val_scaled = self.scaler.transform(X_val)
 
         model = MLPClassifier(
-            hidden_layer_sizes=(64, 32),  # Smaller network to prevent overfitting
+            hidden_layer_sizes=(100, 50),  # Moderate network size
             activation='relu',
             solver='adam',
-            alpha=0.01,  # Increased L2 regularization (from 0.001)
-            batch_size=128,  # Smaller batch size for better generalization
-            learning_rate_init=0.0005,  # Reduced learning rate
-            max_iter=150,  # Reduced iterations
+            alpha=0.001,  # Light L2 regularization
+            batch_size=256,  # Standard batch size
+            learning_rate_init=0.001,  # Standard learning rate
+            max_iter=200,  # More iterations
             early_stopping=True,
-            validation_fraction=0.15,  # More data for validation
-            n_iter_no_change=15,  # More patience before stopping
+            validation_fraction=0.1,  # Standard validation split
+            n_iter_no_change=10,  # Standard early stopping patience
             random_state=42,
             verbose=False
         )
@@ -825,33 +839,63 @@ class ThresholdOptimizer:
         """
         print(f"\n🎯 Optimizing threshold using {method} method...")
 
-        if method == 'quantile':
+        # Print prediction statistics for diagnostics
+        print(f"\n📊 Prediction Distribution:")
+        print(f"   Min:    {predictions.min():.4f}")
+        print(f"   25th:   {np.percentile(predictions, 25):.4f}")
+        print(f"   Median: {np.median(predictions):.4f}")
+        print(f"   75th:   {np.percentile(predictions, 75):.4f}")
+        print(f"   90th:   {np.percentile(predictions, 90):.4f}")
+        print(f"   Max:    {predictions.max():.4f}")
+        print(f"   Mean:   {predictions.mean():.4f}")
+        print(f"   Std:    {predictions.std():.4f}")
+
+        if config.use_fixed_threshold:
+            # Use fixed probability threshold - simple and effective
+            threshold = config.fixed_threshold
+            signals = (predictions >= threshold).astype(int)
+            num_signals = signals.sum()
+
+            print(f"\n🎯 Using FIXED threshold: {threshold:.4f}")
+            print(f"   Signals Generated: {num_signals} ({num_signals/len(predictions)*100:.1f}%)")
+
+            # If too few signals, relax threshold automatically
+            if num_signals < config.min_trades_per_segment:
+                print(f"   ⚠️  Too few signals ({num_signals}), relaxing threshold...")
+                for trial_threshold in [0.52, 0.50, 0.48, 0.45, 0.40]:
+                    signals = (predictions >= trial_threshold).astype(int)
+                    num_signals = signals.sum()
+                    print(f"   Trying threshold {trial_threshold:.2f}: {num_signals} signals")
+                    if num_signals >= config.min_trades_per_segment:
+                        threshold = trial_threshold
+                        break
+                else:
+                    # Final fallback - use threshold that gives us at least some trades
+                    threshold = 0.40
+                    signals = (predictions >= threshold).astype(int)
+                    num_signals = signals.sum()
+                    print(f"   Final fallback threshold {threshold:.2f}: {num_signals} signals")
+
+        elif method == 'quantile':
             # Use quantile-based threshold
             threshold = np.quantile(predictions, config.signal_quantile)
 
             signals = (predictions >= threshold).astype(int)
             num_signals = signals.sum()
 
-            if num_signals == 0:
+            print(f"\n🎯 Using QUANTILE threshold ({config.signal_quantile:.2f}): {threshold:.4f}")
+            print(f"   Signals Generated: {num_signals} ({num_signals/len(predictions)*100:.1f}%)")
+
+            if num_signals < config.min_trades_per_segment:
                 # Relax threshold until we get some signals
-                print(f"   ⚠️  No signals at quantile {config.signal_quantile:.2f}, relaxing threshold...")
-                for quantile in [0.70, 0.65, 0.60, 0.55, 0.50]:
+                print(f"   ⚠️  Too few signals, relaxing threshold...")
+                for quantile in [0.65, 0.60, 0.55, 0.50, 0.45]:
                     threshold = np.quantile(predictions, quantile)
                     signals = (predictions >= threshold).astype(int)
                     num_signals = signals.sum()
                     print(f"   Trying quantile {quantile:.2f}: {num_signals} signals")
                     if num_signals >= config.min_trades_per_segment:
                         break
-
-                # Final safety net - if still no signals, use median
-                if num_signals == 0:
-                    threshold = np.median(predictions)
-                    signals = (predictions >= threshold).astype(int)
-                    num_signals = signals.sum()
-                    print(f"   Using median threshold as fallback: {num_signals} signals")
-
-            print(f"   Final Quantile/Threshold: {threshold:.4f}")
-            print(f"   Signals Generated: {num_signals}")
 
         elif method == 'profit':
             # Try different thresholds and pick the one with best profit
@@ -956,10 +1000,16 @@ class RealisticBacktester:
             threshold: Signal threshold for trading
         """
         print(f"\n📈 Running backtest...")
+        print(f"   Total bars: {len(df):,}")
+        print(f"   Threshold: {threshold:.4f}")
 
         df = df.copy().reset_index(drop=True)
         df['signal_prob'] = signals
         df['signal'] = (signals >= threshold).astype(int)
+
+        # Count raw signals before filtering
+        raw_signals = (df['signal'] == 1).sum()
+        print(f"   Raw signals (before filtering): {raw_signals} ({raw_signals/len(df)*100:.1f}%)")
 
         spread = self.config.get_spread(self.config.symbol)
         slippage_pct = self.config.slippage_pct
@@ -1059,13 +1109,28 @@ class RealisticBacktester:
             else:
                 i += 1
 
-        # Report filtering stats
-        if has_quote_features and (filtered_by_spread > 0 or filtered_by_liquidity > 0):
-            total_signals = (df['signal'] == 1).sum()
-            print(f"   Filtered signals:")
-            print(f"     - By spread: {filtered_by_spread} ({filtered_by_spread/total_signals*100:.1f}%)")
-            print(f"     - By liquidity: {filtered_by_liquidity} ({filtered_by_liquidity/total_signals*100:.1f}%)")
-            print(f"     - Executed: {len(trades)} ({len(trades)/total_signals*100:.1f}%)")
+        # Report comprehensive filtering stats
+        total_signals = (df['signal'] == 1).sum()
+        print(f"\n📊 Trade Execution Summary:")
+        print(f"   Total bars in period:     {len(df):,}")
+        print(f"   Raw signals generated:    {total_signals} ({total_signals/len(df)*100:.1f}%)")
+
+        if spread_threshold is not None:
+            print(f"   Filtered by spread:       {filtered_by_spread} ({filtered_by_spread/total_signals*100:.1f}% of signals)" if total_signals > 0 else "   Filtered by spread:       0")
+            print(f"   Filtered by liquidity:    {filtered_by_liquidity} ({filtered_by_liquidity/total_signals*100:.1f}% of signals)" if total_signals > 0 else "   Filtered by liquidity:    0")
+
+        print(f"   Final executed trades:    {len(trades)} ({len(trades)/total_signals*100:.1f}% of signals)" if total_signals > 0 else f"   Final executed trades:    {len(trades)}")
+
+        if total_signals > 0 and len(trades) == 0:
+            print(f"\n   ⚠️  WARNING: ALL SIGNALS WERE FILTERED OUT!")
+            print(f"   This indicates overly aggressive filtering or a configuration issue.")
+        elif total_signals == 0:
+            print(f"\n   ⚠️  WARNING: NO SIGNALS GENERATED BY MODEL!")
+            print(f"   Model predictions are all below threshold {threshold:.4f}")
+            print(f"   Consider:")
+            print(f"     - Lowering threshold (current: {threshold:.4f})")
+            print(f"     - Checking if model is learning anything")
+            print(f"     - Reviewing label distribution")
 
         # Calculate metrics
         if len(trades) > 0:
