@@ -211,48 +211,48 @@ class Backtest:
 
         # TREND UP: Long on pullbacks
         if regime == 'trend_up':
-            # Check if we're near pullback level (e.g., 20 EMA)
-            if 'ema_20' in self.df.columns and 'dist_to_ema20' in self.df.columns:
-                dist_to_ema = row['dist_to_ema20']
+            # More lenient entry: just check RSI or always enter in trend
+            rsi_ok = True
+            if 'rsi_14' in self.df.columns:
+                rsi_ok = row['rsi_14'] > 40  # Relaxed from 50
 
-                # Entry if within 0.5 ATR of EMA and price bouncing up
-                pullback_tolerance = self.config.strategy.pullback_tolerance_atr * atr / close
-
-                if abs(dist_to_ema) <= pullback_tolerance:
-                    # Confirm momentum turning up (e.g., MACD positive or RSI > 50)
-                    if 'rsi_14' in self.df.columns and row['rsi_14'] > 50:
-                        signal = {
-                            'direction': 'long',
-                            'entry_price': close,
-                            'stop_loss': close - self.sl_atr_mult * atr,
-                            'take_profit': close + self.tp_atr_mult * atr,
-                            'regime': regime
-                        }
+            if rsi_ok:
+                signal = {
+                    'direction': 'long',
+                    'entry_price': close,
+                    'stop_loss': close - self.sl_atr_mult * atr,
+                    'take_profit': close + self.tp_atr_mult * atr,
+                    'regime': regime
+                }
 
         # TREND DOWN: Short on pullbacks
         elif regime == 'trend_down':
-            if 'ema_20' in self.df.columns and 'dist_to_ema20' in self.df.columns:
-                dist_to_ema = row['dist_to_ema20']
-                pullback_tolerance = self.config.strategy.pullback_tolerance_atr * atr / close
+            # More lenient entry: just check RSI or always enter in trend
+            rsi_ok = True
+            if 'rsi_14' in self.df.columns:
+                rsi_ok = row['rsi_14'] < 60  # Relaxed from 50
 
-                if abs(dist_to_ema) <= pullback_tolerance:
-                    if 'rsi_14' in self.df.columns and row['rsi_14'] < 50:
-                        signal = {
-                            'direction': 'short',
-                            'entry_price': close,
-                            'stop_loss': close + self.sl_atr_mult * atr,
-                            'take_profit': close - self.tp_atr_mult * atr,
-                            'regime': regime
-                        }
+            if rsi_ok:
+                signal = {
+                    'direction': 'short',
+                    'entry_price': close,
+                    'stop_loss': close + self.sl_atr_mult * atr,
+                    'take_profit': close - self.tp_atr_mult * atr,
+                    'regime': regime
+                }
 
         # RANGE: Mean reversion
         elif regime == 'range':
             if 'bb_position' in self.df.columns:
                 bb_pos = row['bb_position']
 
-                # Long at lower extreme
-                if bb_pos < 0.1:
-                    if 'rsi_14' in self.df.columns and row['rsi_14'] < self.config.strategy.rsi_oversold:
+                # Long at lower extreme (relaxed from 0.1 to 0.3)
+                if bb_pos < 0.3:
+                    rsi_ok = True
+                    if 'rsi_14' in self.df.columns:
+                        rsi_ok = row['rsi_14'] < 50  # Relaxed from rsi_oversold
+
+                    if rsi_ok:
                         signal = {
                             'direction': 'long',
                             'entry_price': close,
@@ -261,9 +261,13 @@ class Backtest:
                             'regime': regime
                         }
 
-                # Short at upper extreme
-                elif bb_pos > 0.9:
-                    if 'rsi_14' in self.df.columns and row['rsi_14'] > self.config.strategy.rsi_overbought:
+                # Short at upper extreme (relaxed from 0.9 to 0.7)
+                elif bb_pos > 0.7:
+                    rsi_ok = True
+                    if 'rsi_14' in self.df.columns:
+                        rsi_ok = row['rsi_14'] > 50  # Relaxed from rsi_overbought
+
+                    if rsi_ok:
                         signal = {
                             'direction': 'short',
                             'entry_price': close,

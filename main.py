@@ -282,6 +282,22 @@ def generate_summary_report(
     print("\n" + "="*80 + "\n")
 
 
+def convert_to_native_types(obj):
+    """Convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: convert_to_native_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_native_types(item) for item in obj]
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
+
 def save_results(
     wf_results: Dict,
     oos_results: Dict,
@@ -294,9 +310,9 @@ def save_results(
     # Walk-forward results
     wf_file = results_dir / f"walk_forward_{timestamp}.json"
     with open(wf_file, 'w') as f:
-        # Convert tuple keys to strings
+        # Convert tuple keys to strings and numpy types to native types
         wf_serializable = {
-            f"{symbol}_{tf}": results
+            f"{symbol}_{tf}": convert_to_native_types(results)
             for (symbol, tf), results in wf_results.items()
         }
         json.dump(wf_serializable, f, indent=2)
@@ -307,7 +323,7 @@ def save_results(
     oos_file = results_dir / f"oos_{timestamp}.json"
     with open(oos_file, 'w') as f:
         oos_serializable = {
-            f"{symbol}_{tf}": results
+            f"{symbol}_{tf}": convert_to_native_types(results)
             for (symbol, tf), results in oos_results.items()
         }
         json.dump(oos_serializable, f, indent=2)

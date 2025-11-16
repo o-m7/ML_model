@@ -93,10 +93,10 @@ class StrategyConfig:
     tp_atr_multiplier: float = 2.0
 
     # ML probability threshold for trade execution
-    ml_prob_threshold: float = 0.60
+    ml_prob_threshold: float = 0.40
 
     # Minimum expected R to take trade
-    min_expected_r: float = 0.3
+    min_expected_r: float = 0.0
 
     # Pullback entry (for trend regimes)
     pullback_ma_period: int = 20
