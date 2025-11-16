@@ -502,29 +502,41 @@ class EnsembleModelTrainer:
         self.models = {}
         self.calibrated_models = {}
         self.scaler = StandardScaler()
+        self.imputer = None  # Will be fitted during training
         self.feature_columns = []
         self.feature_importance = {}
 
-    def prepare_data(self, df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        """Prepare features and labels."""
-        # Identify feature columns (exclude price, target, metadata)
-        exclude_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp',
-                       'target', 'forward_return_long', 'forward_return_short', 'total_cost_pct']
+    def prepare_data(self, df: pd.DataFrame, is_training: bool = True) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+        """Prepare features and labels.
 
-        feature_cols = [col for col in df.columns if col not in exclude_cols and not col.endswith('_XAGUSD')]
+        Args:
+            df: Input dataframe
+            is_training: If True, fit imputer and store feature columns. If False, use stored values.
+        """
+        if is_training:
+            # Identify feature columns (exclude price, target, metadata)
+            exclude_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp',
+                           'target', 'forward_return_long', 'forward_return_short', 'total_cost_pct']
+
+            feature_cols = [col for col in df.columns if col not in exclude_cols and not col.endswith('_XAGUSD')]
+            self.feature_columns = feature_cols
+        else:
+            # Use stored feature columns from training
+            feature_cols = self.feature_columns
 
         X = df[feature_cols].values
-        y = df['target'].values
+        y = df['target'].values if 'target' in df.columns else np.zeros(len(df))
 
         # Handle NaN values (quote features may have NaNs for bars before 2022)
         nan_count = np.isnan(X).sum()
         if nan_count > 0:
-            # Impute NaN values using median strategy
-            # This fills quote features for bars before 2022 with median values from later data
-            imputer = SimpleImputer(strategy='median')
-            X = imputer.fit_transform(X)
-
-        self.feature_columns = feature_cols
+            if is_training:
+                # Fit imputer on training data
+                self.imputer = SimpleImputer(strategy='median')
+                X = self.imputer.fit_transform(X)
+            else:
+                # Use stored imputer from training
+                X = self.imputer.transform(X)
 
         return X, y, feature_cols
 
@@ -687,8 +699,8 @@ class EnsembleModelTrainer:
         print("=" * 80)
 
         # Prepare data
-        X_train, y_train, feature_cols = self.prepare_data(df_train)
-        X_val, y_val, _ = self.prepare_data(df_val)
+        X_train, y_train, feature_cols = self.prepare_data(df_train, is_training=True)
+        X_val, y_val, _ = self.prepare_data(df_val, is_training=False)
 
         print(f"\n📊 Training set: {len(X_train):,} samples")
         print(f"📊 Validation set: {len(X_val):,} samples")
@@ -728,7 +740,7 @@ class EnsembleModelTrainer:
         - 'weighted': Weighted by validation AUC
         - 'voting': Majority vote
         """
-        X, _, _ = self.prepare_data(df)
+        X, _, _ = self.prepare_data(df, is_training=False)
 
         predictions = []
         for name, model in self.calibrated_models.items():
