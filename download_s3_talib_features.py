@@ -39,10 +39,10 @@ if not all([ACCESS_KEY_ID, SECRET_ACCESS_KEY, S3_ENDPOINT, BUCKET]):
     print("Required: Access_Key_ID, Secret_Access_Key, S3_endpoint, Bucket")
     sys.exit(1)
 
-# Symbols to download (Polygon format in S3)
+# Symbols to download (Polygon format in S3 - with hyphens!)
 SYMBOLS = {
-    'XAUUSD': 'C:XAUUSD',
-    'XAGUSD': 'C:XAGUSD',
+    'XAUUSD': 'C:XAU-USD',
+    'XAGUSD': 'C:XAG-USD',
 }
 
 TIMEFRAMES = ['5T', '15T', '30T', '1H']
@@ -97,11 +97,11 @@ def download_day(s3, date_str, polygon_ticker):
         if df.empty:
             return None
 
-        # Convert timestamp
+        # Convert timestamp (window_start is in nanoseconds)
         if 'window_start' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['window_start'], unit='ms', utc=True)
+            df['timestamp'] = pd.to_datetime(df['window_start'], unit='ns', utc=True)
         elif 't' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
+            df['timestamp'] = pd.to_datetime(df['t'], unit='ns', utc=True)
         else:
             return None
 
