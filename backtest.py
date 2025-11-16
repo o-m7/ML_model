@@ -171,7 +171,7 @@ class Backtest:
             return self.df['ml_proba'].iloc[idx]
 
         # Otherwise, predict on-the-fly
-        from features import get_feature_columns
+        from feature_engineering import get_feature_columns
 
         feature_cols = get_feature_columns(self.df)
         X = self.df[feature_cols].iloc[[idx]]
@@ -577,7 +577,7 @@ class Backtest:
 if __name__ == "__main__":
     from config import get_default_config
     from data_loader import load_all_data, create_sample_data
-    from features import build_features
+    from feature_engineering import build_features
     from model_training import TradingModel
 
     config = get_default_config()

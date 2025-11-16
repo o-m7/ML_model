@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 
 from config import Config
-from features import build_features
+from feature_engineering import build_features
 from model_training import TradingModel
 from backtest import Backtest
 from metrics import calculate_metrics
@@ -320,7 +320,7 @@ def backtest_on_new_data(
     Returns:
         Performance metrics dict
     """
-    from features import build_features, get_feature_columns
+    from feature_engineering import build_features, get_feature_columns
 
     # Build features on new data
     df_features = build_features(new_data, config)

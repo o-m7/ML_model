@@ -246,7 +246,7 @@ def train_model_with_walk_forward(
     Returns:
         Trained model and DataFrame with out-of-fold predictions
     """
-    from features import get_feature_columns
+    from feature_engineering import get_feature_columns
 
     # Get feature columns
     feature_cols = get_feature_columns(df)
@@ -375,7 +375,7 @@ def train_all_models(
 if __name__ == "__main__":
     from config import get_default_config
     from data_loader import load_all_data, create_sample_data
-    from features import build_features
+    from feature_engineering import build_features
 
     config = get_default_config()
 

@@ -23,7 +23,7 @@ from typing import Dict, List, Any
 
 from config import get_default_config, Config
 from data_loader import load_all_data, create_sample_data
-from features import build_features
+from feature_engineering import build_features
 from model_training import train_all_models, TradingModel
 from backtest import Backtest
 from metrics import calculate_metrics, check_target_metrics

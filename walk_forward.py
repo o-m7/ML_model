@@ -13,7 +13,7 @@ from pathlib import Path
 import json
 
 from config import Config
-from features import build_features
+from feature_engineering import build_features
 from model_training import TradingModel
 from backtest import Backtest
 from metrics import calculate_metrics, PerformanceMetrics
@@ -125,7 +125,7 @@ def run_walk_forward_validation(
         )
 
         # Generate predictions for test set
-        from features import get_feature_columns
+        from feature_engineering import get_feature_columns
         feature_cols = get_feature_columns(test_df)
 
         test_df_copy = test_df.copy()
@@ -240,7 +240,7 @@ def run_final_oos_test(
     )
 
     # Generate predictions for test set
-    from features import get_feature_columns
+    from feature_engineering import get_feature_columns
     feature_cols = get_feature_columns(test_df)
 
     test_df_copy = test_df.copy()
