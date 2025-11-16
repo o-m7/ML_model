@@ -141,43 +141,45 @@ def fetch_quotes_day(date: datetime, ticker: str, max_retries: int = 3) -> pd.Da
                 pass
 
 
-def download_quotes_range(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Download quotes for date range."""
+def download_quotes_month(symbol: str, year: int, month: int) -> pd.DataFrame:
+    """Download quotes for a single month, with caching."""
     ticker = TICKER_MAP[symbol]
 
-    print(f"\n{'='*80}")
-    print(f"DOWNLOADING {symbol} QUOTES FROM POLYGON S3")
-    print(f"{'='*80}")
-    print(f"Ticker: {ticker}")
-    print(f"Start: {start_date}")
-    print(f"End: {end_date}")
+    # Check cache first
+    cache_dir = Path("feature_store") / "quotes_cache" / symbol
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{symbol}_{year}_{month:02d}_raw.parquet"
 
-    start = datetime.strptime(start_date, '%Y-%m-%d')
-    end = datetime.strptime(end_date, '%Y-%m-%d')
+    if cache_file.exists():
+        print(f"  ✓ Using cached data for {year}-{month:02d}")
+        return pd.read_parquet(cache_file)
+
+    print(f"  📥 Downloading {year}-{month:02d}...")
+
+    # Determine date range for this month
+    start_date = datetime(year, month, 1)
+    if month == 12:
+        end_date = datetime(year + 1, 1, 1) - timedelta(days=1)
+    else:
+        end_date = datetime(year, month + 1, 1) - timedelta(days=1)
 
     all_data = []
-    current_date = start
-    total_days = (end - start).days
-    day_count = 0
+    current_date = start_date
+    days_processed = 0
 
-    while current_date <= end:
+    while current_date <= end_date:
         # Skip weekends (forex is closed)
         if current_date.weekday() < 5:  # Monday = 0, Friday = 4
-            day_count += 1
-
-            if day_count % 10 == 0:
-                progress = (current_date - start).days / total_days * 100
-                print(f"  Progress: {progress:.1f}% ({current_date.strftime('%Y-%m-%d')})")
-
             df_day = fetch_quotes_day(current_date, ticker)
 
             if not df_day.empty:
                 all_data.append(df_day)
+                days_processed += 1
 
         current_date += timedelta(days=1)
 
     if not all_data:
-        print(f"\n❌ No quote data found for {symbol}")
+        print(f"     ⚠️  No data found")
         return pd.DataFrame()
 
     # Combine all days
@@ -185,10 +187,69 @@ def download_quotes_range(symbol: str, start_date: str, end_date: str) -> pd.Dat
     df = df.sort_values('timestamp')
     df = df.drop_duplicates(subset='timestamp', keep='last')
 
+    # Save to cache
+    df.to_parquet(cache_file, index=False, compression='snappy')
+
+    cache_size_mb = cache_file.stat().st_size / 1024 / 1024
+    print(f"     ✓ {len(df):,} quotes | {days_processed} days | {cache_size_mb:.1f} MB cached")
+
+    return df
+
+
+def download_quotes_range(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
+    """Download quotes for date range, processing by month with resume capability."""
+
+    print(f"\n{'='*80}")
+    print(f"DOWNLOADING {symbol} QUOTES FROM POLYGON S3")
+    print(f"{'='*80}")
+    print(f"Ticker: {TICKER_MAP[symbol]}")
+    print(f"Start: {start_date}")
+    print(f"End: {end_date}")
+    print(f"Strategy: Monthly chunks with parquet caching")
+
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.strptime(end_date, '%Y-%m-%d')
+
+    # Generate list of (year, month) tuples to download
+    months_to_download = []
+    current = start
+    while current <= end:
+        months_to_download.append((current.year, current.month))
+        # Move to next month
+        if current.month == 12:
+            current = datetime(current.year + 1, 1, 1)
+        else:
+            current = datetime(current.year, current.month + 1, 1)
+
+    print(f"Total months: {len(months_to_download)}")
+    print()
+
+    # Download each month
+    monthly_data = []
+    for idx, (year, month) in enumerate(months_to_download, 1):
+        print(f"[{idx}/{len(months_to_download)}] Processing {year}-{month:02d}")
+
+        df_month = download_quotes_month(symbol, year, month)
+
+        if not df_month.empty:
+            monthly_data.append(df_month)
+
+    if not monthly_data:
+        print(f"\n❌ No quote data found for {symbol}")
+        return pd.DataFrame()
+
+    # Combine all months
+    print(f"\n📊 Combining {len(monthly_data)} months of data...")
+    df = pd.concat(monthly_data, ignore_index=True)
+    df = df.sort_values('timestamp')
+    df = df.drop_duplicates(subset='timestamp', keep='last')
+
     print(f"\n✅ Downloaded {len(df):,} quote records")
     print(f"   Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
-    print(f"   Avg spread: {df['spread'].mean():.4f}")
-    print(f"   Avg spread %: {df['spread_pct'].mean():.4f}%")
+
+    if len(df) > 0:
+        print(f"   Avg spread: {df['spread'].mean():.4f}")
+        print(f"   Avg spread %: {df['spread_pct'].mean():.4f}%")
 
     return df
 
@@ -296,6 +357,20 @@ def main():
                     size_mb = file_path.stat().st_size / 1024 / 1024
                     avg_spread = df['spread_pct'].mean()
                     print(f"  {timeframe:5s}: {len(df):7,} bars | Avg spread: {avg_spread:.4f}% | {size_mb:6.2f} MB")
+
+    # Cache statistics
+    print("\n📦 Cache Statistics:")
+    cache_dir = Path("feature_store") / "quotes_cache"
+    if cache_dir.exists():
+        total_cache_mb = sum(f.stat().st_size for f in cache_dir.rglob("*.parquet")) / 1024 / 1024
+        total_cache_files = len(list(cache_dir.rglob("*.parquet")))
+        print(f"   Cached months: {total_cache_files}")
+        print(f"   Cache size: {total_cache_mb:.1f} MB")
+        print(f"   Location: {cache_dir}")
+        print(f"\n   💡 To free space, delete: feature_store/quotes_cache/")
+        print(f"      (Will re-download on next run)")
+    else:
+        print("   No cache files")
 
 
 if __name__ == "__main__":
