@@ -857,6 +857,16 @@ def train_all_models():
                 print(f"\n📥 Loading {symbol} {timeframe} with features...")
                 df = load_data(symbol, timeframe)
 
+                # Map TA-Lib column names to expected names
+                column_mapping = {
+                    'atr': 'atr14',  # TA-Lib uses 14 period by default
+                    'natr': 'natr14',
+                    'rsi_14': 'rsi14',
+                    'rsi_7': 'rsi7',
+                    'bb_middle': 'bb_mid',
+                }
+                df = df.rename(columns=column_mapping)
+
                 # Features already calculated - skip build_features()
                 print(f"✅ Using pre-calculated features: {len(df.columns)} columns, {len(df):,} bars")
 
