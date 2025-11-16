@@ -83,12 +83,22 @@ def fetch_quotes_day(date: datetime, ticker: str, max_retries: int = 3) -> pd.Da
         with gzip.open(temp_path, 'rt') as gz:
             df = pd.read_csv(gz)
 
+        rows_before_filter = len(df)
+
         # Filter for specific ticker
         if 'ticker' in df.columns:
             df = df[df['ticker'] == ticker].copy()
 
+        rows_after_filter = len(df)
+
         if df.empty:
             return pd.DataFrame()
+
+        # Debug: Show what columns we have on first day
+        if date.day == 1 and date.month == 1:
+            with print_lock:
+                print(f"    📋 Debug {date_str}: {rows_before_filter:,} total rows, {rows_after_filter:,} for {ticker}")
+                print(f"       Columns: {list(df.columns)[:10]}")
 
         # Parse timestamp - try multiple formats
         if 'participant_timestamp' in df.columns:
@@ -128,7 +138,17 @@ def fetch_quotes_day(date: datetime, ticker: str, max_retries: int = 3) -> pd.Da
             keep_cols.extend(['bid_size', 'ask_size'])
 
         df = df[[col for col in keep_cols if col in df.columns]].copy()
+
+        rows_before_dropna = len(df)
         df = df.dropna()
+        rows_after_dropna = len(df)
+
+        # Debug on first day of year
+        if date.day == 1 and date.month == 1 and rows_before_dropna > 0:
+            with print_lock:
+                dropped = rows_before_dropna - rows_after_dropna
+                print(f"       Dropped {dropped:,} rows with NaN ({dropped/rows_before_dropna*100:.1f}%)")
+                print(f"       Final: {rows_after_dropna:,} quotes for this day")
 
         return df
 
