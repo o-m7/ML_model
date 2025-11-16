@@ -32,6 +32,9 @@ import xgboost as xgb
 from sklearn.metrics import classification_report, roc_auc_score
 import joblib
 
+# Import live feature utils (same features as live trading)
+from live_feature_utils import build_feature_frame
+
 warnings.filterwarnings('ignore')
 
 # ============================================================================
@@ -115,13 +118,12 @@ MIN_EXPECTANCY = 0.05       # Average R per trade (small positive edge)
 
 def load_data(symbol: str, timeframe: str) -> pd.DataFrame:
     """
-    Load data with pre-calculated features for a symbol and timeframe.
+    Load raw OHLCV data for a symbol and timeframe.
 
     Expects data in feature_store/{symbol}/{symbol}_{timeframe}.parquet
-    with TA-Lib features already calculated.
 
     Returns:
-        DataFrame with DatetimeIndex and all features
+        DataFrame with DatetimeIndex and OHLCV columns
     """
     data_path = DATA_DIR / symbol / f"{symbol}_{timeframe}.parquet"
 
@@ -144,7 +146,11 @@ def load_data(symbol: str, timeframe: str) -> pd.DataFrame:
     # Sort by time
     df = df.sort_index()
 
-    print(f"✅ Loaded {symbol} {timeframe}: {len(df):,} bars, {len(df.columns)} features, {df.index[0]} to {df.index[-1]}")
+    # Keep only OHLCV (strip any extra columns)
+    required_cols = ['open', 'high', 'low', 'close', 'volume']
+    df = df[[col for col in required_cols if col in df.columns]].copy()
+
+    print(f"✅ Loaded {symbol} {timeframe}: {len(df):,} OHLCV bars, {df.index[0]} to {df.index[-1]}")
 
     return df
 
@@ -853,22 +859,14 @@ def train_all_models():
 
         for timeframe in TIMEFRAMES:
             try:
-                # Load data with pre-calculated TA-Lib features
-                print(f"\n📥 Loading {symbol} {timeframe} with features...")
+                # Load raw OHLCV data
+                print(f"\n📥 Loading {symbol} {timeframe} OHLCV...")
                 df = load_data(symbol, timeframe)
 
-                # Map TA-Lib column names to expected names
-                column_mapping = {
-                    'atr': 'atr14',  # TA-Lib uses 14 period by default
-                    'natr': 'natr14',
-                    'rsi_14': 'rsi14',
-                    'rsi_7': 'rsi7',
-                    'bb_middle': 'bb_mid',
-                }
-                df = df.rename(columns=column_mapping)
-
-                # Features already calculated - skip build_features()
-                print(f"✅ Using pre-calculated features: {len(df.columns)} columns, {len(df):,} bars")
+                # Calculate features using live_feature_utils (SAME as live trading)
+                print(f"🔧 Calculating features using live_feature_utils...")
+                df = build_feature_frame(df)
+                print(f"✅ Features calculated: {len(df.columns)} columns, {len(df):,} bars")
 
                 # Build labels (still needed for training)
                 print(f"\n🏷️  Creating labels...")
