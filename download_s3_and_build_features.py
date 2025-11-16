@@ -1,30 +1,36 @@
 #!/usr/bin/env python3
 """
-Download XAUUSD/XAGUSD from Polygon S3 minute aggregates (2019-2025) and build all features.
-Uses direct S3 access to Polygon flat files.
+Download XAUUSD/XAGUSD from Polygon S3 (minute_aggs + quotes) and build all features.
+Uses Massive.com S3 endpoint with proper configuration.
+Date range: 2020-2025
 """
 
 import os
 import sys
 import boto3
+from botocore.config import Config
 import pandas as pd
 import gzip
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from io import BytesIO
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# S3 Configuration - matches your .env file naming
-S3_CLIENT = boto3.client(
-    's3',
+# Initialize boto3 session with Massive.com configuration
+session = boto3.Session(
     aws_access_key_id=os.getenv('Access_Key_ID'),
     aws_secret_access_key=os.getenv('Secret_Access_Key'),
-    endpoint_url=os.getenv('S3_Endpoint')
 )
 
-S3_BUCKET = os.getenv('Bucket', 'flatfiles')
+s3 = session.client(
+    's3',
+    endpoint_url=os.getenv('S3_Endpoint', 'https://files.massive.com'),
+    config=Config(signature_version='s3v4'),
+)
+
+BUCKET = os.getenv('Bucket', 'flatfiles')
 
 # Symbols to download
 SYMBOLS = ['XAUUSD', 'XAGUSD']
@@ -42,20 +48,18 @@ TIMEFRAMES = {
 }
 
 
-def fetch_day_from_s3(date: datetime, ticker: str) -> pd.DataFrame:
+def fetch_minute_aggs(date: datetime, ticker: str) -> pd.DataFrame:
     """Fetch minute aggregates for a specific day and ticker from S3."""
     year = date.strftime('%Y')
     month = date.strftime('%m')
     date_str = date.strftime('%Y-%m-%d')
 
-    file_key = f'global_forex/minute_aggs_v1/{year}/{month}/{date_str}.csv.gz'
+    object_key = f'global_forex/minute_aggs_v1/{year}/{month}/{date_str}.csv.gz'
 
     try:
-        # Fetch file from S3
-        response = S3_CLIENT.get_object(Bucket=S3_BUCKET, Key=file_key)
+        response = s3.get_object(Bucket=BUCKET, Key=object_key)
         compressed_data = response['Body'].read()
 
-        # Decompress and read CSV
         with gzip.GzipFile(fileobj=BytesIO(compressed_data)) as gz:
             df = pd.read_csv(gz)
 
@@ -66,12 +70,24 @@ def fetch_day_from_s3(date: datetime, ticker: str) -> pd.DataFrame:
         if df.empty:
             return pd.DataFrame()
 
-        # Convert timestamp (Polygon uses milliseconds)
-        # Use errors='coerce' to handle corrupt timestamps (converts to NaT)
+        # Parse timestamp - Polygon uses nanoseconds in window_start
         if 'window_start' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['window_start'], unit='ms', utc=True, errors='coerce')
+            # Try nanoseconds first, then milliseconds, then as-is
+            try:
+                df['timestamp'] = pd.to_datetime(df['window_start'], unit='ns', utc=True)
+            except:
+                try:
+                    df['timestamp'] = pd.to_datetime(df['window_start'], unit='ms', utc=True)
+                except:
+                    df['timestamp'] = pd.to_datetime(df['window_start'], utc=True)
         elif 'timestamp' in df.columns:
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True, errors='coerce')
+            try:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ns', utc=True)
+            except:
+                try:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+                except:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
 
         # Rename columns to standard OHLCV
         df = df.rename(columns={
@@ -80,31 +96,83 @@ def fetch_day_from_s3(date: datetime, ticker: str) -> pd.DataFrame:
             'low': 'low',
             'close': 'close',
             'volume': 'volume',
-            'transactions': 'volume'  # Fallback
         })
 
         # Keep only required columns
-        df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].copy()
-
-        # Count corrupt rows before dropping
-        corrupt_count = df['timestamp'].isna().sum()
-        if corrupt_count > 0:
-            # Only report if significant (>1% of rows)
-            total_rows = len(df)
-            if corrupt_count / total_rows > 0.01:
-                print(f"    ⚠️  Skipped {corrupt_count}/{total_rows} rows with corrupt timestamps")
-
+        required_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+        df = df[[col for col in required_cols if col in df.columns]].copy()
         df = df.dropna()
 
         return df
 
-    except S3_CLIENT.exceptions.NoSuchKey:
-        return pd.DataFrame()  # File doesn't exist
+    except s3.exceptions.NoSuchKey:
+        return pd.DataFrame()
     except Exception as e:
-        # Only print non-timestamp errors
-        error_msg = str(e)
-        if "Out of bounds nanosecond timestamp" not in error_msg:
-            print(f"    ⚠️  Error: {e}")
+        # Suppress common errors
+        if "NoSuchKey" not in str(e) and "404" not in str(e):
+            print(f"    ⚠️  Error on {date_str}: {e}")
+        return pd.DataFrame()
+
+
+def fetch_quotes(date: datetime, ticker: str) -> pd.DataFrame:
+    """Fetch quote data for a specific day and ticker from S3."""
+    year = date.strftime('%Y')
+    month = date.strftime('%m')
+    date_str = date.strftime('%Y-%m-%d')
+
+    object_key = f'global_forex/quotes_v1/{year}/{month}/{date_str}.csv.gz'
+
+    try:
+        response = s3.get_object(Bucket=BUCKET, Key=object_key)
+        compressed_data = response['Body'].read()
+
+        with gzip.GzipFile(fileobj=BytesIO(compressed_data)) as gz:
+            df = pd.read_csv(gz)
+
+        # Filter for specific ticker
+        if 'ticker' in df.columns:
+            df = df[df['ticker'] == ticker].copy()
+
+        if df.empty:
+            return pd.DataFrame()
+
+        # Parse timestamp
+        if 'participant_timestamp' in df.columns:
+            try:
+                df['timestamp'] = pd.to_datetime(df['participant_timestamp'], unit='ns', utc=True)
+            except:
+                try:
+                    df['timestamp'] = pd.to_datetime(df['participant_timestamp'], unit='ms', utc=True)
+                except:
+                    df['timestamp'] = pd.to_datetime(df['participant_timestamp'], utc=True)
+        elif 'timestamp' in df.columns:
+            try:
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ns', utc=True)
+            except:
+                try:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms', utc=True)
+                except:
+                    df['timestamp'] = pd.to_datetime(df['timestamp'], utc=True)
+
+        # Keep relevant columns
+        df = df.rename(columns={
+            'bid_price': 'bid',
+            'ask_price': 'ask',
+            'bid_size': 'bid_size',
+            'ask_size': 'ask_size',
+        })
+
+        # Calculate mid price for OHLCV
+        if 'bid' in df.columns and 'ask' in df.columns:
+            df['mid'] = (df['bid'] + df['ask']) / 2
+
+        return df
+
+    except s3.exceptions.NoSuchKey:
+        return pd.DataFrame()
+    except Exception as e:
+        if "NoSuchKey" not in str(e) and "404" not in str(e):
+            print(f"    ⚠️  Error on {date_str}: {e}")
         return pd.DataFrame()
 
 
@@ -123,7 +191,7 @@ def download_symbol_range(symbol: str, start_date: str, end_date: str) -> pd.Dat
     ticker = TICKER_MAP[symbol]
 
     print(f"\n{'='*80}")
-    print(f"DOWNLOADING {symbol} MINUTE AGGREGATES FROM S3")
+    print(f"DOWNLOADING {symbol} FROM POLYGON S3")
     print(f"{'='*80}")
     print(f"Ticker: {ticker}")
     print(f"Start: {start_date}")
@@ -146,7 +214,8 @@ def download_symbol_range(symbol: str, start_date: str, end_date: str) -> pd.Dat
                 progress = (current_date - start).days / total_days * 100
                 print(f"  Progress: {progress:.1f}% ({current_date.strftime('%Y-%m-%d')})")
 
-            df_day = fetch_day_from_s3(current_date, ticker)
+            # Fetch minute aggregates (primary source)
+            df_day = fetch_minute_aggs(current_date, ticker)
 
             if not df_day.empty:
                 all_data.append(df_day)
@@ -209,8 +278,8 @@ def save_to_feature_store(df: pd.DataFrame, symbol: str, timeframe: str):
 def main():
     """Main download and processing pipeline."""
 
-    # Date range
-    start_date = "2019-01-01"
+    # Date range: 2020-2025
+    start_date = "2020-01-01"
     end_date = "2025-11-14"
 
     print("\n" + "="*80)
