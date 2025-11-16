@@ -1191,8 +1191,8 @@ class RealisticBacktester:
                 entry_price = df.loc[i, 'close']
                 entry_cost = spread + (entry_price * slippage_pct)
 
-                # Exit after lookback bars or at end of data
-                exit_idx = min(i + self.config.lookback_bars, len(df) - 1)
+                # Exit after max_holding_bars or at end of data
+                exit_idx = min(i + self.config.max_holding_bars, len(df) - 1)
                 exit_price = df.loc[exit_idx, 'close']
                 exit_cost = spread + (exit_price * slippage_pct)
 
@@ -1621,19 +1621,15 @@ def main():
     # Configuration
     config = TradingConfig(
         symbol="XAUUSD",
-        timeframe="15T",
-        lookback_bars=5,
-        signal_quantile=0.90,
-        min_trades_per_segment=20,
-        min_profit_factor=1.5,
-        min_sharpe_ratio=0.5
+        timeframe="15T"
     )
 
     print(f"\n⚙️  Configuration:")
     print(f"   Symbol: {config.symbol}")
     print(f"   Timeframe: {config.timeframe}")
-    print(f"   Lookback: {config.lookback_bars} bars")
-    print(f"   Signal quantile: {config.signal_quantile}")
+    print(f"   Max holding: {config.max_holding_bars} bars")
+    print(f"   TP/SL multiples: {config.tp_atr_multiple}R / {config.sl_atr_multiple}R")
+    print(f"   Fixed threshold: {config.fixed_threshold}")
     print(f"   Min viable PF: {config.min_profit_factor}")
     print(f"   Min viable Sharpe: {config.min_sharpe_ratio}")
 
