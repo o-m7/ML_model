@@ -166,8 +166,8 @@ def fetch_quotes_day(date: datetime, ticker: str, max_retries: int = 3) -> pd.Da
                 pass
 
 
-def download_quotes_month(symbol: str, year: int, month: int, month_idx: int = 0, total_months: int = 0) -> pd.DataFrame:
-    """Download quotes for a single month, with caching. Thread-safe."""
+def download_quotes_month(symbol: str, year: int, month: int, month_idx: int = 0, total_months: int = 0, day_workers: int = 5) -> pd.DataFrame:
+    """Download quotes for a single month, with caching. Thread-safe. Parallelizes days within month."""
     ticker = TICKER_MAP[symbol]
 
     # Check cache first
@@ -196,28 +196,35 @@ def download_quotes_month(symbol: str, year: int, month: int, month_idx: int = 0
     else:
         end_date = datetime(year, month + 1, 1) - timedelta(days=1)
 
-    all_data = []
+    # Collect all weekday dates in this month
+    dates_to_download = []
     current_date = start_date
-    days_processed = 0
-
     while current_date <= end_date:
-        # Skip weekends (forex is closed)
         if current_date.weekday() < 5:  # Monday = 0, Friday = 4
-            df_day = fetch_quotes_day(current_date, ticker)
-
-            if not df_day.empty:
-                all_data.append(df_day)
-                days_processed += 1
-
+            dates_to_download.append(current_date)
         current_date += timedelta(days=1)
 
-    if not all_data:
+    # Download days in parallel
+    daily_data = []
+
+    def fetch_day_wrapper(date):
+        return fetch_quotes_day(date, ticker)
+
+    with ThreadPoolExecutor(max_workers=day_workers) as executor:
+        futures = {executor.submit(fetch_day_wrapper, date): date for date in dates_to_download}
+
+        for future in as_completed(futures):
+            df_day = future.result()
+            if not df_day.empty:
+                daily_data.append(df_day)
+
+    if not daily_data:
         with print_lock:
             print(f"     ⚠️  No data found for {year}-{month:02d}")
         return pd.DataFrame()
 
     # Combine all days
-    df = pd.concat(all_data, ignore_index=True)
+    df = pd.concat(daily_data, ignore_index=True)
     df = df.sort_values('timestamp')
     df = df.drop_duplicates(subset='timestamp', keep='last')
 
@@ -229,12 +236,12 @@ def download_quotes_month(symbol: str, year: int, month: int, month_idx: int = 0
         if total_months > 0:
             print(f"[{month_idx}/{total_months}] {year}-{month:02d} ✅ {len(df):,} quotes | {cache_size_mb:.1f} MB")
         else:
-            print(f"     ✓ {len(df):,} quotes | {days_processed} days | {cache_size_mb:.1f} MB cached")
+            print(f"     ✓ {len(df):,} quotes | {len(daily_data)} days | {cache_size_mb:.1f} MB cached")
 
     return df
 
 
-def download_quotes_range(symbol: str, start_date: str, end_date: str, max_workers: int = 3) -> pd.DataFrame:
+def download_quotes_range(symbol: str, start_date: str, end_date: str, max_workers: int = 3, day_workers: int = 5) -> pd.DataFrame:
     """Download quotes for date range, processing months in parallel with resume capability."""
 
     print(f"\n{'='*80}")
@@ -243,7 +250,7 @@ def download_quotes_range(symbol: str, start_date: str, end_date: str, max_worke
     print(f"Ticker: {TICKER_MAP[symbol]}")
     print(f"Start: {start_date}")
     print(f"End: {end_date}")
-    print(f"Strategy: Parallel monthly chunks ({max_workers} workers) with parquet caching")
+    print(f"Strategy: 2-level parallel ({max_workers} months × {day_workers} days = {max_workers*day_workers} concurrent downloads)")
 
     start = datetime.strptime(start_date, '%Y-%m-%d')
     end = datetime.strptime(end_date, '%Y-%m-%d')
@@ -267,7 +274,7 @@ def download_quotes_range(symbol: str, start_date: str, end_date: str, max_worke
 
     def download_wrapper(args):
         idx, year, month = args
-        df = download_quotes_month(symbol, year, month, idx, len(months_to_download))
+        df = download_quotes_month(symbol, year, month, idx, len(months_to_download), day_workers)
         return (year, month), df
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
