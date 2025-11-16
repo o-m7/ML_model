@@ -1138,8 +1138,25 @@ class WalkForwardValidator:
             print(f"{'=' * 80}")
 
             # Feature engineering
-            train_df = FeatureEngineer.create_all_features(train_df, df_secondary)
-            test_df = FeatureEngineer.create_all_features(test_df, df_secondary)
+            # Check if features are already calculated
+            feature_cols = [col for col in train_df.columns
+                           if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume',
+                                         'bid', 'ask', 'spread', 'spread_pct', 'mid', 'label']]
+
+            if len(feature_cols) < 10:
+                print("   🔧 Calculating features...")
+                train_df = FeatureEngineer.create_all_features(train_df, df_secondary)
+                test_df = FeatureEngineer.create_all_features(test_df, df_secondary)
+            else:
+                print(f"   ✓ Using pre-calculated features ({len(feature_cols)} features)")
+                # Still need to apply cross-asset features if secondary data provided
+                if df_secondary is not None and 'price_ratio' not in train_df.columns:
+                    train_df = FeatureEngineer.add_cross_asset_features(
+                        train_df, df_secondary, self.config.symbol, "XAGUSD"
+                    )
+                    test_df = FeatureEngineer.add_cross_asset_features(
+                        test_df, df_secondary, self.config.symbol, "XAGUSD"
+                    )
 
             # Label engineering
             train_df = LabelEngineer.create_profit_labels(train_df, self.config)
@@ -1226,9 +1243,17 @@ class WalkForwardValidator:
 # SECTION 8: MAIN EXECUTION PIPELINE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T") -> pd.DataFrame:
+def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quotes: bool = True) -> pd.DataFrame:
     """
-    Load data from feature store or generate sample data for demonstration.
+    Load data from feature store with calculated features and optional quote data.
+
+    Args:
+        symbol: 'XAUUSD' or 'XAGUSD'
+        timeframe: '5T', '15T', '30T', '1H'
+        include_quotes: Whether to merge quote data (bid/ask spreads)
+
+    Returns:
+        DataFrame with OHLCV + features + quotes (if available)
     """
     feature_store = Path("feature_store")
     data_path = feature_store / symbol / f"{symbol}_{timeframe}.parquet"
@@ -1240,6 +1265,32 @@ def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T") -> pd.DataF
         if 'timestamp' not in df.columns and isinstance(df.index, pd.DatetimeIndex):
             df = df.reset_index()
             df.columns = ['timestamp'] + list(df.columns[1:])
+
+        # Load and merge quote data if requested
+        if include_quotes:
+            quotes_path = feature_store / "quotes" / symbol / f"{symbol}_{timeframe}_quotes.parquet"
+
+            if quotes_path.exists():
+                print(f"📊 Loading quote data from {quotes_path}")
+                df_quotes = pd.read_parquet(quotes_path)
+
+                # Merge on timestamp
+                df = pd.merge(df, df_quotes, on='timestamp', how='left', suffixes=('', '_quote'))
+
+                print(f"   ✓ Merged {len(df_quotes)} quote records")
+                print(f"   ✓ Avg spread: {df['spread'].mean():.4f} ({df['spread_pct'].mean():.4f}%)")
+            else:
+                print(f"   ⚠️  Quote data not found at {quotes_path}")
+
+        # Check if features are already calculated
+        feature_cols = [col for col in df.columns
+                       if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume',
+                                     'bid', 'ask', 'spread', 'spread_pct', 'mid']]
+
+        if len(feature_cols) > 10:
+            print(f"   ✓ Using pre-calculated features ({len(feature_cols)} features)")
+        else:
+            print(f"   ⚠️  Only {len(feature_cols)} features found - may need to run calculate_all_features.py")
 
         return df
     else:
