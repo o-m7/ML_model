@@ -98,9 +98,12 @@ class TradingConfig:
     risk_per_trade_pct: float = 0.01  # 1% risk per trade (reduced from 2% for better risk management)
     max_daily_drawdown_pct: float = 0.05  # 5% max daily DD
 
-    # Model parameters
-    lookback_bars: int = 5  # Bars to predict forward (15min * 5 = 75 min holding period)
-    min_profit_threshold_pct: float = 0.0  # No additional threshold - just need to beat costs
+    # Label creation parameters (TP/SL-based)
+    max_holding_bars: int = 8  # Maximum bars to hold trade (5T: 40min, 15T: 120min)
+    tp_atr_multiple: float = 1.5  # Take profit = entry ± (1.5 × ATR)
+    sl_atr_multiple: float = 1.0  # Stop loss = entry ± (1.0 × ATR)
+    min_r_multiple: float = 0.5  # Minimum R multiple to consider trade valid
+    use_tpsl_labels: bool = True  # Use TP/SL-based labels vs simple forward return
 
     # Threshold optimization
     use_fixed_threshold: bool = True  # Use fixed threshold instead of quantile
@@ -409,75 +412,196 @@ class FeatureEngineer:
 
 class LabelEngineer:
     """
-    Creates profit-aligned labels that account for transaction costs.
-    This ensures the model learns what is actually profitable, not just directional moves.
+    Creates realistic TP/SL-based labels that reflect actual tradeable opportunities.
+    Labels answer: "Would opening a trade at this bar have hit TP before SL?"
     """
 
     @staticmethod
     def create_profit_labels(df: pd.DataFrame, config: TradingConfig) -> pd.DataFrame:
         """
-        Label based on forward profitability after costs.
+        Create labels based on TP/SL outcomes over a realistic holding period.
 
-        Label = 1 (BUY): If going long now and exiting in N bars yields profit > costs
-        Label = 0 (SELL/SKIP): If going short now yields profit, or no clear opportunity
+        For each bar, we simulate:
+        - Entry at close price
+        - TP/SL levels based on ATR multiples
+        - Looking forward max_holding_bars to see which hits first
+
+        Returns:
+            df with 'target' column:
+            - 1 (LONG): TP hit before SL on long side, better than short
+            - 0 (FLAT/SHORT): No clear edge or short is better
         """
         df = df.copy()
 
+        if config.use_tpsl_labels:
+            return LabelEngineer._create_tpsl_labels(df, config)
+        else:
+            return LabelEngineer._create_simple_labels(df, config)
+
+    @staticmethod
+    def _create_tpsl_labels(df: pd.DataFrame, config: TradingConfig) -> pd.DataFrame:
+        """
+        TP/SL-based label creation - the realistic approach.
+        """
+        print(f"\n🎯 Creating TP/SL-based labels...")
+        print(f"   Max holding period: {config.max_holding_bars} bars")
+        print(f"   TP multiple: {config.tp_atr_multiple} × ATR")
+        print(f"   SL multiple: {config.sl_atr_multiple} × ATR")
+        print(f"   Min R multiple: {config.min_r_multiple}")
+
+        # Ensure we have ATR
+        if 'atr_14' not in df.columns:
+            print(f"   ⚠️  ATR not found, calculating...")
+            df['atr_14'] = df['high'].rolling(14).max() - df['low'].rolling(14).min()
+
+        n = len(df)
+        max_hold = config.max_holding_bars
+
+        # Pre-allocate arrays for results
+        labels = np.zeros(n, dtype=int)
+        long_r_multiples = np.zeros(n)
+        short_r_multiples = np.zeros(n)
+        holding_periods = np.zeros(n)
+
+        # Process each bar (except last max_hold bars which don't have full future)
+        valid_bars = n - max_hold
+
+        for i in range(valid_bars):
+            entry_price = df['close'].iloc[i]
+            atr = df['atr_14'].iloc[i]
+
+            # Skip if ATR is NaN or zero
+            if pd.isna(atr) or atr <= 0:
+                continue
+
+            # Define TP/SL levels
+            tp_long = entry_price + (config.tp_atr_multiple * atr)
+            sl_long = entry_price - (config.sl_atr_multiple * atr)
+            tp_short = entry_price - (config.tp_atr_multiple * atr)
+            sl_short = entry_price + (config.sl_atr_multiple * atr)
+
+            # Look forward through the holding window
+            long_hit_tp = False
+            long_hit_sl = False
+            short_hit_tp = False
+            short_hit_sl = False
+            bars_held = 0
+
+            for j in range(1, max_hold + 1):
+                idx = i + j
+                high = df['high'].iloc[idx]
+                low = df['low'].iloc[idx]
+
+                # Check LONG trade
+                if not long_hit_tp and not long_hit_sl:
+                    if high >= tp_long:
+                        long_hit_tp = True
+                        bars_held = j
+                    elif low <= sl_long:
+                        long_hit_sl = True
+                        bars_held = j
+
+                # Check SHORT trade
+                if not short_hit_tp and not short_hit_sl:
+                    if low <= tp_short:
+                        short_hit_tp = True
+                    elif high >= sl_short:
+                        short_hit_sl = True
+
+            # Calculate R multiples
+            if long_hit_tp:
+                long_r = config.tp_atr_multiple
+            elif long_hit_sl:
+                long_r = -config.sl_atr_multiple
+            else:
+                # Neither hit - calculate exit at max_hold
+                exit_price = df['close'].iloc[i + max_hold]
+                long_r = (exit_price - entry_price) / atr if atr > 0 else 0
+                bars_held = max_hold
+
+            if short_hit_tp:
+                short_r = config.tp_atr_multiple
+            elif short_hit_sl:
+                short_r = -config.sl_atr_multiple
+            else:
+                exit_price = df['close'].iloc[i + max_hold]
+                short_r = (entry_price - exit_price) / atr if atr > 0 else 0
+
+            long_r_multiples[i] = long_r
+            short_r_multiples[i] = short_r
+            holding_periods[i] = bars_held
+
+            # Label logic:
+            # LONG (1) if: long R is positive, >= min_r_multiple, and better than short
+            # FLAT (0) otherwise
+            if long_r >= config.min_r_multiple and long_r > short_r:
+                labels[i] = 1
+
+        # Add to dataframe
+        df['target'] = labels
+        df['long_r'] = long_r_multiples
+        df['short_r'] = short_r_multiples
+        df['holding_bars'] = holding_periods
+
+        # Remove bars without full future data
+        df = df.iloc[:-max_hold].copy()
+
+        # Report statistics
+        long_count = (labels[:valid_bars] == 1).sum()
+        flat_count = (labels[:valid_bars] == 0).sum()
+
+        # Calculate stats for winning trades
+        long_trades = long_r_multiples[:valid_bars][labels[:valid_bars] == 1]
+        avg_long_r = long_trades.mean() if len(long_trades) > 0 else 0
+        avg_holding = holding_periods[:valid_bars][labels[:valid_bars] == 1].mean() if len(long_trades) > 0 else 0
+
+        print(f"\n📊 TP/SL Label Distribution:")
+        print(f"   Total bars:           {valid_bars:,}")
+        print(f"   LONG opportunities:   {long_count:,} ({long_count/valid_bars*100:.1f}%)")
+        print(f"   FLAT/SHORT:           {flat_count:,} ({flat_count/valid_bars*100:.1f}%)")
+        print(f"   Avg LONG R-multiple:  {avg_long_r:.2f}")
+        print(f"   Avg holding period:   {avg_holding:.1f} bars")
+        print(f"\n   This reflects realistic trades with TP={config.tp_atr_multiple}×ATR, SL={config.sl_atr_multiple}×ATR")
+
+        return df
+
+    @staticmethod
+    def _create_simple_labels(df: pd.DataFrame, config: TradingConfig) -> pd.DataFrame:
+        """
+        Simple forward-return based labels (legacy method).
+        """
+        print(f"\n📊 Creating simple forward-return labels (legacy)...")
+
+        df = df.copy()
         spread = config.get_spread(config.symbol)
-        lookback = config.lookback_bars
-        min_profit_pct = config.min_profit_threshold_pct
+        lookback = config.max_holding_bars
 
         # Calculate forward returns
         forward_price = df['close'].shift(-lookback)
         forward_return_long = (forward_price - df['close']) / df['close']
-        forward_return_short = (df['close'] - forward_price) / df['close']
 
         # Account for spread and slippage
         total_cost_pct = (spread / df['close']) + config.slippage_pct + config.commission_pct
 
-        # Profitable long: forward return exceeds costs (NO additional threshold - just beat costs!)
+        # Profitable long: forward return exceeds costs
         profitable_long = forward_return_long > total_cost_pct
 
-        # Profitable short: short return exceeds costs
-        profitable_short = forward_return_short > total_cost_pct
-
         # Create binary labels
-        # 1 = Long opportunity, 0 = Short opportunity or no trade
         labels = np.zeros(len(df), dtype=int)
         labels[profitable_long] = 1
-        # For this version, we'll keep 0 for both short and neutral to maintain binary classification
-        # In production, you might want tertiary labels (long/short/neutral)
 
         df['target'] = labels
         df['forward_return_long'] = forward_return_long
-        df['forward_return_short'] = forward_return_short
         df['total_cost_pct'] = total_cost_pct
 
-        # Remove last N bars (no forward data)
+        # Remove last N bars
         df = df.iloc[:-lookback].copy()
 
-        # Report label distribution with detailed stats
-        long_count = (labels == 1).sum()
-        short_neutral_count = (labels == 0).sum()
-        total = len(labels)
+        long_count = (labels[:-lookback] == 1).sum()
+        total = len(df)
 
-        # Calculate actual profitability if we traded all labeled opportunities
-        long_returns = forward_return_long[profitable_long[:-lookback]]
-        if len(long_returns) > 0:
-            avg_long_return = long_returns.mean()
-            max_long_return = long_returns.max()
-        else:
-            avg_long_return = 0
-            max_long_return = 0
-
-        print(f"\n📊 Label Distribution (Profit-Aligned - Beat Costs Only):")
         print(f"   Total bars:          {total:,}")
         print(f"   Long opportunities:  {long_count:,} ({long_count/total*100:.1f}%)")
-        print(f"   Short/Neutral:       {short_neutral_count:,} ({short_neutral_count/total*100:.1f}%)")
-        print(f"   Avg total cost:      {df['total_cost_pct'].mean()*100:.4f}%")
-        print(f"   Avg long return:     {avg_long_return*100:.4f}%")
-        print(f"   Max long return:     {max_long_return*100:.4f}%")
-        print(f"   Lookback bars:       {lookback}")
 
         return df
 
