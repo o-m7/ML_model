@@ -34,6 +34,7 @@ import lightgbm as lgb
 from sklearn.neural_network import MLPClassifier
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.preprocessing import StandardScaler
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import (
     roc_auc_score, precision_recall_curve, classification_report,
     confusion_matrix, roc_curve
@@ -514,6 +515,22 @@ class EnsembleModelTrainer:
 
         X = df[feature_cols].values
         y = df['target'].values
+
+        # Handle NaN values (quote features may have NaNs for bars before 2022)
+        nan_count = np.isnan(X).sum()
+        if nan_count > 0:
+            # Impute NaN values
+            # For quote features: use median strategy for most, 0 for counts
+            # Create imputer with median strategy
+            imputer = SimpleImputer(strategy='median')
+            X = imputer.fit_transform(X)
+
+            # For q_quote_count specifically, set to 0 if it was NaN
+            if 'q_quote_count' in feature_cols:
+                q_count_idx = feature_cols.index('q_quote_count')
+                # Where original df had NaN for q_quote_count, set to 0
+                nan_mask = df[feature_cols].isna().values[:, q_count_idx]
+                X[nan_mask, q_count_idx] = 0
 
         self.feature_columns = feature_cols
 
