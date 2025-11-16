@@ -411,7 +411,8 @@ def train_model_with_walk_forward(
         print(f"\nTop 10 features:")
         print(importance.head(10))
 
-    final_model.select_top_features(n_features=40)
+    # Note: Not doing feature selection here to avoid feature mismatch errors
+    # Tree-based models handle feature importance naturally through their boosting process
 
     df_with_preds = df.copy()
     df_with_preds['ml_proba'] = oof_predictions

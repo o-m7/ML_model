@@ -114,12 +114,9 @@ def run_walk_forward_validation(
         model = TradingModel(config, symbol, timeframe)
         stats = model.train(X_train, y_train, X_val, y_val)
 
-        # Feature selection
-        model.select_top_features(n_features=40)
-
-        # Get predictions on test fold
+        # Get predictions on test fold (use all features from training)
         test_df_copy = test_df.copy()
-        y_test_proba = model.predict_proba(test_df[model.feature_cols])
+        y_test_proba = model.predict_proba(test_df[feature_cols])
         test_df_copy['ml_proba'] = y_test_proba
 
         # Tune threshold on this fold
