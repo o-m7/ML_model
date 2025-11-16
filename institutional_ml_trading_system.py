@@ -1189,23 +1189,55 @@ class RealisticBacktester:
                         continue
                 # Enter long trade
                 entry_price = df.loc[i, 'close']
-                entry_cost = spread + (entry_price * slippage_pct)
+
+                # Get ATR for stop-loss distance (in dollars for XAUUSD)
+                atr = df.loc[i, 'atr_14'] if 'atr_14' in df.columns else (df.loc[i, 'high'] - df.loc[i, 'low'])
+
+                # Stop-loss distance in dollars (using SL multiple from config)
+                sl_distance = self.config.sl_atr_multiple * atr
+
+                # XAUUSD position sizing:
+                # 1 lot = 100 oz, $1 move = $100 profit/loss per lot
+                # Risk amount in dollars
+                risk_amount = equity * self.config.risk_per_trade_pct
+
+                # Position size in lots based on stop-loss distance
+                # Dollar risk per lot = sl_distance * 100
+                if sl_distance > 0:
+                    position_size_lots = risk_amount / (sl_distance * 100.0)
+                    position_size_lots = min(position_size_lots, self.config.max_position_size)
+                else:
+                    position_size_lots = self.config.max_position_size
 
                 # Exit after max_holding_bars or at end of data
                 exit_idx = min(i + self.config.max_holding_bars, len(df) - 1)
                 exit_price = df.loc[exit_idx, 'close']
-                exit_cost = spread + (exit_price * slippage_pct)
 
-                # Calculate PnL
-                price_change = exit_price - entry_price
-                total_cost = entry_cost + exit_cost
-                pnl = price_change - total_cost
-                pnl_pct = pnl / entry_price
+                # Apply spread and slippage to entry and exit
+                # Entry: pay ask (close + spread/2) + slippage
+                # Exit: receive bid (close - spread/2) - slippage
+                effective_entry = entry_price + (spread / 2.0) + (entry_price * slippage_pct)
+                effective_exit = exit_price - (spread / 2.0) - (exit_price * slippage_pct)
+
+                # Calculate PnL in dollars
+                # Price change in dollars × position size in lots × 100 oz per lot
+                price_change = effective_exit - effective_entry
+                trade_pnl = price_change * position_size_lots * 100.0
 
                 # Update equity
-                position_size = self.config.risk_per_trade_pct * equity
-                trade_pnl = position_size * (pnl / entry_price)
                 equity += trade_pnl
+
+                # Debug output (first 3 trades only)
+                if len(trades) < 3:
+                    print(f"\n   DEBUG Trade #{len(trades)+1}:")
+                    print(f"      Entry: ${entry_price:.2f}, Exit: ${exit_price:.2f}")
+                    print(f"      ATR: ${atr:.2f}, SL distance: ${sl_distance:.2f}")
+                    print(f"      Risk amount: ${risk_amount:.2f}")
+                    print(f"      Position size: {position_size_lots:.4f} lots")
+                    print(f"      Effective entry: ${effective_entry:.2f}, exit: ${effective_exit:.2f}")
+                    print(f"      Price change: ${price_change:.2f}")
+                    print(f"      Trade PnL: ${trade_pnl:.2f}")
+                    print(f"      New equity: ${equity:.2f}")
 
                 trades.append({
                     'entry_idx': i,
@@ -1214,8 +1246,9 @@ class RealisticBacktester:
                     'exit_idx': exit_idx,
                     'exit_time': df.loc[exit_idx, 'timestamp'] if 'timestamp' in df.columns else exit_idx,
                     'exit_price': exit_price,
+                    'position_size_lots': position_size_lots,
                     'pnl': trade_pnl,
-                    'pnl_pct': pnl_pct,
+                    'pnl_pct': (trade_pnl / equity) * 100.0,
                     'signal_prob': df.loc[i, 'signal_prob']
                 })
 
