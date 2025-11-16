@@ -19,7 +19,7 @@ import pandas as pd
 from pathlib import Path
 import json
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 
 from config import get_default_config, Config
 from data_loader import load_all_data, create_sample_data
@@ -168,6 +168,26 @@ def run_full_pipeline(config: Config, mode: str = 'full'):
 
         wf_results_all[(symbol, tf)] = wf_results
 
+    # Model selection and strategy filtering
+    print("\n" + "="*60)
+    print("STEP 4.5: Model Selection & Strategy Filtering")
+    print("="*60)
+
+    viable_strategies, rejected_strategies = filter_viable_strategies(
+        wf_results_all,
+        config
+    )
+
+    if len(viable_strategies) == 0:
+        print("\n" + "="*60)
+        print("WARNING: No viable strategies found!")
+        print("All strategies rejected. Cannot proceed to OOS testing.")
+        print("="*60 + "\n")
+
+        # Save rejected strategies only
+        save_results({}, {}, rejected_strategies, config)
+        return
+
     # Final out-of-sample testing
     print("\n" + "="*60)
     print("STEP 5: Final Out-of-Sample Testing")
@@ -175,20 +195,24 @@ def run_full_pipeline(config: Config, mode: str = 'full'):
 
     oos_results_all = {}
 
-    for (symbol, tf), feature_splits in all_features.items():
+    for (symbol, tf), wf_result in viable_strategies.items():
         train_val_df = pd.concat([
-            feature_splits['train'],
-            feature_splits['val']
+            all_features[(symbol, tf)]['train'],
+            all_features[(symbol, tf)]['val']
         ])
 
-        test_df = feature_splits['test']
+        test_df = all_features[(symbol, tf)]['test']
+
+        # Use optimal threshold from walk-forward
+        optimal_threshold = wf_result.get('optimal_threshold', 0.5)
 
         oos_results = run_final_oos_test(
             train_val_df,
             test_df,
             config,
             symbol,
-            tf
+            tf,
+            optimal_threshold
         )
 
         oos_results_all[(symbol, tf)] = oos_results
@@ -201,7 +225,7 @@ def run_full_pipeline(config: Config, mode: str = 'full'):
     generate_summary_report(wf_results_all, oos_results_all, config)
 
     # Save all results
-    save_results(wf_results_all, oos_results_all, config)
+    save_results(wf_results_all, oos_results_all, rejected_strategies, config)
 
     print("\n" + "="*60)
     print("Pipeline Complete!")
@@ -283,34 +307,105 @@ def generate_summary_report(
 
 
 def convert_to_native_types(obj):
-    """Convert numpy types to native Python types for JSON serialization."""
+    """Convert numpy/pandas types to native Python types for JSON serialization."""
     if isinstance(obj, dict):
         return {k: convert_to_native_types(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [convert_to_native_types(item) for item in obj]
-    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+    elif isinstance(obj, tuple):
+        return tuple(convert_to_native_types(item) for item in obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
         return int(obj)
-    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+    elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
         return float(obj)
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
+    elif isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.isoformat()
+    elif pd.isna(obj):
+        return None
     else:
         return obj
+
+
+def filter_viable_strategies(
+    wf_results_all: Dict,
+    config: Config
+) -> Tuple[Dict, Dict]:
+    """
+    Filter strategies to only those that are viable based on walk-forward performance.
+
+    Also auto-reject XAGUSD if all silver strategies are unprofitable.
+    """
+    viable_strategies = {}
+    rejected_strategies = {}
+
+    # Check XAGUSD viability
+    xagusd_strategies = {k: v for k, v in wf_results_all.items() if k[0] == 'XAGUSD'}
+    xagusd_viable = any(v.get('is_viable', False) for v in xagusd_strategies.values())
+
+    if not xagusd_viable and len(xagusd_strategies) > 0:
+        print("\n" + "="*60)
+        print("WARNING: All XAGUSD strategies are UNPROFITABLE")
+        print("Excluding XAGUSD from OOS testing")
+        print("="*60 + "\n")
+
+    for (symbol, tf), wf_result in wf_results_all.items():
+        # Skip XAGUSD if all silver strategies failed
+        if symbol == 'XAGUSD' and not xagusd_viable:
+            rejected_strategies[(symbol, tf)] = {
+                **wf_result,
+                'rejection_reason': 'All XAGUSD strategies unprofitable'
+            }
+            continue
+
+        # Check viability
+        if wf_result.get('is_viable', False):
+            viable_strategies[(symbol, tf)] = wf_result
+            print(f"✓ {symbol} {tf}min: APPROVED for OOS testing")
+        else:
+            pf = wf_result.get('avg_profit_factor', 0)
+            sharpe = wf_result.get('avg_sharpe', 0)
+            trades = wf_result.get('total_trades', 0)
+
+            reasons = []
+            if pf < 1.3:
+                reasons.append(f"PF={pf:.2f}<1.3")
+            if sharpe < 0.5:
+                reasons.append(f"Sharpe={sharpe:.2f}<0.5")
+            if trades < 50:
+                reasons.append(f"Trades={trades}<50")
+
+            rejected_strategies[(symbol, tf)] = {
+                **wf_result,
+                'rejection_reason': ', '.join(reasons)
+            }
+            print(f"✗ {symbol} {tf}min: REJECTED ({', '.join(reasons)})")
+
+    print(f"\n{'='*60}")
+    print(f"Model Selection Summary:")
+    print(f"  Viable strategies:   {len(viable_strategies)}")
+    print(f"  Rejected strategies: {len(rejected_strategies)}")
+    print(f"{'='*60}\n")
+
+    return viable_strategies, rejected_strategies
 
 
 def save_results(
     wf_results: Dict,
     oos_results: Dict,
+    rejected_strategies: Dict,
     config: Config
 ):
-    """Save results to JSON files."""
+    """Save results to JSON files with proper type conversion."""
     results_dir = Path("results")
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
     # Walk-forward results
     wf_file = results_dir / f"walk_forward_{timestamp}.json"
     with open(wf_file, 'w') as f:
-        # Convert tuple keys to strings and numpy types to native types
         wf_serializable = {
             f"{symbol}_{tf}": convert_to_native_types(results)
             for (symbol, tf), results in wf_results.items()
@@ -329,6 +424,17 @@ def save_results(
         json.dump(oos_serializable, f, indent=2)
 
     print(f"OOS results saved to {oos_file}")
+
+    # Rejected strategies
+    rejected_file = results_dir / f"rejected_{timestamp}.json"
+    with open(rejected_file, 'w') as f:
+        rejected_serializable = {
+            f"{symbol}_{tf}": convert_to_native_types(results)
+            for (symbol, tf), results in rejected_strategies.items()
+        }
+        json.dump(rejected_serializable, f, indent=2)
+
+    print(f"Rejected strategies saved to {rejected_file}")
 
     # Summary CSV
     summary_data = []

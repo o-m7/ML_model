@@ -1,8 +1,5 @@
 """
-Walk-forward validation and out-of-sample testing module.
-
-Implements rolling window retraining and validation to prevent overfitting
-and assess true out-of-sample performance.
+Walk-forward validation with threshold tuning and model selection - FIXED VERSION.
 """
 
 import numpy as np
@@ -14,7 +11,7 @@ import json
 
 from config import Config
 from feature_engineering import build_features
-from model_training import TradingModel
+from model_training import TradingModel, tune_probability_threshold
 from backtest import Backtest
 from metrics import calculate_metrics, PerformanceMetrics
 
@@ -24,36 +21,18 @@ def create_walk_forward_splits(
     n_splits: int = 5,
     train_ratio: float = 0.7
 ) -> List[Tuple[pd.DataFrame, pd.DataFrame]]:
-    """
-    Create walk-forward splits.
-
-    Each split has:
-    - Training set: earlier data
-    - Test set: immediately following period
-
-    Args:
-        df: Full dataset
-        n_splits: Number of walk-forward windows
-        train_ratio: Ratio of train to total window
-
-    Returns:
-        List of (train_df, test_df) tuples
-    """
+    """Create walk-forward splits."""
     splits = []
-
     total_len = len(df)
     window_size = total_len // n_splits
 
     for i in range(n_splits):
-        # Test window
         test_start = i * window_size
         test_end = test_start + window_size
 
-        # Handle last split
         if i == n_splits - 1:
             test_end = total_len
 
-        # Train window (all data before test window, or rolling window)
         train_start = max(0, test_start - int(window_size * (1 / (1 - train_ratio))))
         train_end = test_start
 
@@ -68,6 +47,31 @@ def create_walk_forward_splits(
     return splits
 
 
+def evaluate_strategy_viability(wf_results: Dict, config: Config) -> bool:
+    """
+    Determine if a strategy is viable based on walk-forward results.
+
+    Criteria:
+    - Profit Factor >= 1.3
+    - Sharpe Ratio >= 0.5
+    - Max DD <= -8%
+    - Total trades >= 50
+    """
+    pf = wf_results['avg_profit_factor']
+    sharpe = wf_results['avg_sharpe']
+    dd = wf_results['avg_max_dd']
+    trades = wf_results['total_trades']
+
+    is_viable = (
+        pf >= 1.3 and
+        sharpe >= 0.5 and
+        dd >= -8.0 and
+        trades >= 50
+    )
+
+    return is_viable
+
+
 def run_walk_forward_validation(
     df: pd.DataFrame,
     config: Config,
@@ -76,71 +80,68 @@ def run_walk_forward_validation(
     n_splits: int = 5
 ) -> Dict[str, Any]:
     """
-    Run walk-forward validation.
-
-    For each split:
-    1. Train model on training window
-    2. Backtest on test window
-    3. Calculate metrics
-
-    Args:
-        df: Full dataset with features
-        config: Configuration
-        symbol: Symbol name
-        timeframe: Timeframe in minutes
-        n_splits: Number of walk-forward windows
-
-    Returns:
-        Dict with aggregated results
+    Run walk-forward validation with threshold tuning.
     """
+    from feature_engineering import get_feature_columns
+
     print(f"\n{'='*60}")
     print(f"Walk-Forward Validation: {symbol} {timeframe}min")
     print(f"Total data: {len(df)} bars, {n_splits} splits")
     print(f"{'='*60}\n")
 
-    # Create splits
     splits = create_walk_forward_splits(df, n_splits=n_splits)
-
     print(f"Created {len(splits)} walk-forward splits")
 
     fold_results = []
+    optimal_thresholds = []
 
     for fold_idx, (train_df, test_df) in enumerate(splits):
         print(f"\nFold {fold_idx + 1}/{len(splits)}")
         print(f"  Train: {len(train_df)} bars ({train_df.index[0]} to {train_df.index[-1]})")
         print(f"  Test:  {len(test_df)} bars ({test_df.index[0]} to {test_df.index[-1]})")
 
-        # Train model on this fold
-        from model_training import train_model_with_walk_forward
-        from feature_engineering import get_feature_columns
-
-        # Use a subset of the train data for validation within training
+        # Train model
         train_split = int(len(train_df) * 0.8)
         train_fold = train_df.iloc[:train_split]
         val_fold = train_df.iloc[train_split:]
 
-        # Get feature columns
         feature_cols = get_feature_columns(train_fold)
-
-        # Prepare training data
         X_train = train_fold[feature_cols]
         y_train = train_fold['target']
         X_val = val_fold[feature_cols]
         y_val = val_fold['target']
 
         model = TradingModel(config, symbol, timeframe)
-        model.train(X_train, y_train, X_val, y_val)
+        stats = model.train(X_train, y_train, X_val, y_val)
 
+        # Feature selection
+        model.select_top_features(n_features=40)
+
+        # Get predictions on test fold
         test_df_copy = test_df.copy()
-        test_df_copy['ml_proba'] = model.predict_proba(test_df[feature_cols])
+        y_test_proba = model.predict_proba(test_df[model.feature_cols])
+        test_df_copy['ml_proba'] = y_test_proba
 
-        # Backtest on test window
+        # Tune threshold on this fold
+        optimal_threshold, threshold_metrics = tune_probability_threshold(
+            test_df['target'].values,
+            y_test_proba,
+            test_df_copy,
+            model,
+            config,
+            symbol,
+            timeframe
+        )
+
+        optimal_thresholds.append(optimal_threshold)
+        model.optimal_threshold = optimal_threshold
+
+        # Backtest with optimal threshold
+        config.strategy.ml_prob_threshold = optimal_threshold
         bt = Backtest(test_df_copy, model, config, symbol, timeframe)
         results_df = bt.run()
-
         trade_log = bt.get_trade_log()
 
-        # Calculate metrics
         if len(trade_log) > 0:
             equity_curve = results_df['equity']
             metrics = calculate_metrics(equity_curve, trade_log, config.risk.initial_capital)
@@ -151,6 +152,7 @@ def run_walk_forward_validation(
                 'train_end': str(train_df.index[-1]),
                 'test_start': str(test_df.index[0]),
                 'test_end': str(test_df.index[-1]),
+                'optimal_threshold': optimal_threshold,
                 'total_trades': len(trade_log),
                 'win_rate': metrics.win_rate,
                 'profit_factor': metrics.profit_factor,
@@ -160,10 +162,10 @@ def run_walk_forward_validation(
                 'avg_r': metrics.avg_r
             })
 
-            print(f"  Trades: {len(trade_log)}, Win Rate: {metrics.win_rate*100:.2f}%, "
+            print(f"  → Trades: {len(trade_log)}, WR: {metrics.win_rate*100:.2f}%, "
                   f"PF: {metrics.profit_factor:.2f}, DD: {metrics.max_drawdown_pct:.2f}%")
         else:
-            print(f"  No trades generated")
+            print(f"  → No trades generated")
 
     # Aggregate results
     if len(fold_results) > 0:
@@ -180,16 +182,23 @@ def run_walk_forward_validation(
             'avg_sharpe': fold_df['sharpe_ratio'].mean(),
             'avg_r': fold_df['avg_r'].mean(),
             'total_trades': fold_df['total_trades'].sum(),
+            'optimal_threshold': np.median(optimal_thresholds),
             'fold_results': fold_results
         }
 
+        # Model selection criteria
+        is_viable = evaluate_strategy_viability(aggregated, config)
+        aggregated['is_viable'] = is_viable
+
         print(f"\n{'='*60}")
         print(f"Walk-Forward Summary:")
-        print(f"  Avg Win Rate:     {aggregated['avg_win_rate']*100:.2f}%")
+        print(f"  Avg Win Rate:      {aggregated['avg_win_rate']*100:.2f}%")
         print(f"  Avg Profit Factor: {aggregated['avg_profit_factor']:.2f}")
-        print(f"  Avg Max DD:       {aggregated['avg_max_dd']:.2f}%")
-        print(f"  Avg Sharpe:       {aggregated['avg_sharpe']:.2f}")
-        print(f"  Total Trades:     {aggregated['total_trades']}")
+        print(f"  Avg Max DD:        {aggregated['avg_max_dd']:.2f}%")
+        print(f"  Avg Sharpe:        {aggregated['avg_sharpe']:.2f}")
+        print(f"  Total Trades:      {aggregated['total_trades']}")
+        print(f"  Optimal Threshold: {aggregated['optimal_threshold']:.2f}")
+        print(f"  Strategy Viable:   {'✓ YES' if is_viable else '✗ NO'}")
         print(f"{'='*60}\n")
 
         return aggregated
@@ -199,6 +208,7 @@ def run_walk_forward_validation(
             'timeframe': timeframe,
             'n_splits': 0,
             'successful_splits': 0,
+            'is_viable': False,
             'error': 'No successful splits'
         }
 
@@ -208,23 +218,15 @@ def run_final_oos_test(
     test_df: pd.DataFrame,
     config: Config,
     symbol: str,
-    timeframe: int
+    timeframe: int,
+    optimal_threshold: float = None
 ) -> Dict[str, Any]:
     """
-    Run final out-of-sample test.
-
-    Train on train+val data, test on completely held-out test set.
-
-    Args:
-        train_val_df: Combined training and validation data
-        test_df: Final test set (never seen during training)
-        config: Configuration
-        symbol: Symbol name
-        timeframe: Timeframe in minutes
-
-    Returns:
-        Dict with final OOS results
+    Run final OOS test with pre-tuned threshold.
     """
+    from feature_engineering import get_feature_columns
+    from model_training import train_model_with_walk_forward
+
     print(f"\n{'='*60}")
     print(f"Final Out-of-Sample Test: {symbol} {timeframe}min")
     print(f"{'='*60}\n")
@@ -233,8 +235,6 @@ def run_final_oos_test(
     print(f"Test set:     {len(test_df)} bars ({test_df.index[0]} to {test_df.index[-1]})")
 
     # Train final model
-    from model_training import train_model_with_walk_forward
-
     model, _ = train_model_with_walk_forward(
         train_val_df,
         config,
@@ -242,24 +242,34 @@ def run_final_oos_test(
         timeframe
     )
 
-    # Generate predictions for test set
-    from feature_engineering import get_feature_columns
+    # Use optimal threshold from walk-forward
+    if optimal_threshold is not None:
+        model.optimal_threshold = optimal_threshold
+        config.strategy.ml_prob_threshold = optimal_threshold
+        print(f"Using optimal threshold: {optimal_threshold:.2f}")
+
+    # Generate predictions
     feature_cols = get_feature_columns(test_df)
-
     test_df_copy = test_df.copy()
-    test_df_copy['ml_proba'] = model.predict_proba(test_df[feature_cols])
+    y_test_proba = model.predict_proba(test_df[feature_cols])
+    test_df_copy['ml_proba'] = y_test_proba
 
-    # Backtest on OOS test set
+    # Log probability distribution
+    print(f"Probability distribution: min={y_test_proba.min():.3f}, "
+          f"median={np.median(y_test_proba):.3f}, max={y_test_proba.max():.3f}")
+    print(f"Above threshold ({config.strategy.ml_prob_threshold:.2f}): "
+          f"{(y_test_proba >= config.strategy.ml_prob_threshold).sum()}")
+
+    # Backtest on OOS
     bt = Backtest(test_df_copy, model, config, symbol, timeframe)
     results_df = bt.run()
-
     trade_log = bt.get_trade_log()
 
     # Calculate metrics
     equity_curve = results_df['equity']
     metrics = calculate_metrics(equity_curve, trade_log, config.risk.initial_capital)
 
-    # Check if meets targets
+    # Check targets
     from metrics import check_target_metrics
     target_checks = check_target_metrics(
         metrics,
@@ -278,20 +288,21 @@ def run_final_oos_test(
         'timeframe': timeframe,
         'test_period_start': str(test_df.index[0]),
         'test_period_end': str(test_df.index[-1]),
-        'total_trades': len(trade_log),
-        'win_rate': metrics.win_rate,
-        'profit_factor': metrics.profit_factor,
-        'max_dd_pct': metrics.max_drawdown_pct,
-        'total_pnl': metrics.total_pnl,
-        'sharpe_ratio': metrics.sharpe_ratio,
-        'sortino_ratio': metrics.sortino_ratio,
-        'avg_r': metrics.avg_r,
-        'expectancy': metrics.expectancy,
-        'meets_target_win_rate': target_checks['win_rate_pass'],
-        'meets_target_pf': target_checks['profit_factor_pass'],
-        'meets_target_dd': target_checks['max_dd_pass'],
-        'meets_all_targets': target_checks['all_pass'],
-        'passes_prop_eval': prop_results.passes_evaluation,
+        'optimal_threshold': float(optimal_threshold) if optimal_threshold else 0.5,
+        'total_trades': int(len(trade_log)),
+        'win_rate': float(metrics.win_rate),
+        'profit_factor': float(metrics.profit_factor),
+        'max_dd_pct': float(metrics.max_drawdown_pct),
+        'total_pnl': float(metrics.total_pnl),
+        'sharpe_ratio': float(metrics.sharpe_ratio),
+        'sortino_ratio': float(metrics.sortino_ratio),
+        'avg_r': float(metrics.avg_r),
+        'expectancy': float(metrics.expectancy),
+        'meets_target_win_rate': bool(target_checks['win_rate_pass']),
+        'meets_target_pf': bool(target_checks['profit_factor_pass']),
+        'meets_target_dd': bool(target_checks['max_dd_pass']),
+        'meets_all_targets': bool(target_checks['all_pass']),
+        'passes_prop_eval': bool(prop_results.passes_evaluation),
         'model_path': f"models/{symbol}_{timeframe}_final.pkl"
     }
 
@@ -315,74 +326,8 @@ def run_final_oos_test(
     if oos_results['meets_all_targets']:
         model_dir = config.monitoring.model_dir
         model_dir.mkdir(parents=True, exist_ok=True)
-
         model_path = model_dir / f"{symbol}_{timeframe}_final.pkl"
         model.save(str(model_path))
-
         print(f"Model saved to {model_path}")
 
     return oos_results
-
-
-if __name__ == "__main__":
-    from config import get_default_config
-    from data_loader import load_all_data, create_sample_data
-
-    config = get_default_config()
-
-    # Create sample data
-    symbol = "XAUUSD"
-    timeframe = 5
-
-    file_path = config.data.data_dir / f"{symbol}_{timeframe}.csv"
-    if not file_path.exists():
-        df = create_sample_data(symbol, timeframe, n_bars=20000, save_path=str(file_path))
-
-    # Load data
-    all_data = load_all_data(config)
-
-    if (symbol, timeframe) in all_data:
-        # Build features
-        print("Building features...")
-        train_df = all_data[(symbol, timeframe)]['train']
-        val_df = all_data[(symbol, timeframe)]['val']
-        test_df = all_data[(symbol, timeframe)]['test']
-
-        train_features = build_features(train_df, config)
-        val_features = build_features(val_df, config)
-        test_features = build_features(test_df, config)
-
-        # Combine train + val for walk-forward
-        train_val_features = pd.concat([train_features, val_features])
-
-        # Run walk-forward validation
-        wf_results = run_walk_forward_validation(
-            train_val_features,
-            config,
-            symbol,
-            timeframe,
-            n_splits=3
-        )
-
-        # Run final OOS test
-        oos_results = run_final_oos_test(
-            train_val_features,
-            test_features,
-            config,
-            symbol,
-            timeframe
-        )
-
-        # Save results
-        results_dir = Path("results")
-        results_dir.mkdir(exist_ok=True)
-
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-
-        with open(results_dir / f"{symbol}_{timeframe}_wf_{timestamp}.json", 'w') as f:
-            json.dump(wf_results, f, indent=2)
-
-        with open(results_dir / f"{symbol}_{timeframe}_oos_{timestamp}.json", 'w') as f:
-            json.dump(oos_results, f, indent=2)
-
-        print(f"\nResults saved to {results_dir}")
