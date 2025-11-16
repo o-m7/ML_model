@@ -364,19 +364,31 @@ def filter_viable_strategies(
         # Check viability
         if wf_result.get('is_viable', False):
             viable_strategies[(symbol, tf)] = wf_result
-            print(f"✓ {symbol} {tf}min: APPROVED for OOS testing")
-        else:
             pf = wf_result.get('avg_profit_factor', 0)
-            sharpe = wf_result.get('avg_sharpe', 0)
             trades = wf_result.get('total_trades', 0)
+            sharpe = wf_result.get('avg_sharpe', 0)
+            print(f"✓ {symbol} {tf}min: APPROVED for OOS testing "
+                  f"(PF={pf:.2f}, Trades={trades}, Sharpe={sharpe:.2f})")
+        else:
+            # Use rejection_reasons from evaluate_strategy_viability if available
+            if 'rejection_reasons' in wf_result and wf_result['rejection_reasons']:
+                reasons = wf_result['rejection_reasons']
+            else:
+                # Fallback: compute reasons here
+                pf = wf_result.get('avg_profit_factor', 0)
+                sharpe = wf_result.get('avg_sharpe', 0)
+                trades = wf_result.get('total_trades', 0)
+                dd = wf_result.get('avg_max_dd', 0)
 
-            reasons = []
-            if pf < 1.3:
-                reasons.append(f"PF={pf:.2f}<1.3")
-            if sharpe < 0.5:
-                reasons.append(f"Sharpe={sharpe:.2f}<0.5")
-            if trades < 50:
-                reasons.append(f"Trades={trades}<50")
+                reasons = []
+                if pf < config.validation.min_profit_factor:
+                    reasons.append(f"PF={pf:.2f}<{config.validation.min_profit_factor}")
+                if sharpe < config.validation.min_sharpe_ratio:
+                    reasons.append(f"Sharpe={sharpe:.2f}<{config.validation.min_sharpe_ratio}")
+                if trades < config.validation.min_total_trades:
+                    reasons.append(f"Trades={trades}<{config.validation.min_total_trades}")
+                if dd < -config.validation.max_drawdown_pct:
+                    reasons.append(f"DD={dd:.1f}%<-{config.validation.max_drawdown_pct}%")
 
             rejected_strategies[(symbol, tf)] = {
                 **wf_result,

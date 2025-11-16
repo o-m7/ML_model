@@ -143,22 +143,55 @@ class TradingModel:
             )
             self.model.fit(X_train, y_train)
 
-        # Calibrate probabilities
-        print("  Calibrating probabilities...")
-        self.calibrated_model = CalibratedClassifierCV(
-            self.model,
-            method='isotonic',
-            cv='prefit'
-        )
+        # Calibrate probabilities (with diagnostics and fallback)
+        calibration_enabled = self.config.validation.enable_calibration
+        calibration_collapse_threshold = self.config.validation.calibration_collapse_threshold
 
-        if X_val is not None and y_val is not None:
-            self.calibrated_model.fit(X_val, y_val)
-        else:
-            split_idx = int(len(X_train) * 0.8)
-            self.calibrated_model.fit(
-                X_train.iloc[split_idx:],
-                y_train.iloc[split_idx:]
+        if calibration_enabled:
+            print("  Calibrating probabilities...")
+
+            # Get raw probabilities first for comparison
+            if X_val is not None and y_val is not None:
+                raw_proba_val = self.model.predict_proba(X_val)[:, 1]
+            else:
+                split_idx = int(len(X_train) * 0.8)
+                raw_proba_val = self.model.predict_proba(X_train.iloc[split_idx:])[:, 1]
+
+            # Fit calibrator
+            self.calibrated_model = CalibratedClassifierCV(
+                self.model,
+                method=self.config.validation.calibration_method,
+                cv='prefit'
             )
+
+            if X_val is not None and y_val is not None:
+                self.calibrated_model.fit(X_val, y_val)
+                calibrated_proba_val = self.calibrated_model.predict_proba(X_val)[:, 1]
+            else:
+                split_idx = int(len(X_train) * 0.8)
+                self.calibrated_model.fit(
+                    X_train.iloc[split_idx:],
+                    y_train.iloc[split_idx:]
+                )
+                calibrated_proba_val = self.calibrated_model.predict_proba(X_train.iloc[split_idx:])[:, 1]
+
+            # Diagnostic: Compare raw vs calibrated distributions
+            raw_std = np.std(raw_proba_val)
+            cal_std = np.std(calibrated_proba_val)
+
+            print(f"    Raw proba: min={raw_proba_val.min():.3f}, median={np.median(raw_proba_val):.3f}, "
+                  f"max={raw_proba_val.max():.3f}, std={raw_std:.3f}")
+            print(f"    Calibrated proba: min={calibrated_proba_val.min():.3f}, median={np.median(calibrated_proba_val):.3f}, "
+                  f"max={calibrated_proba_val.max():.3f}, std={cal_std:.3f}")
+
+            # GUARD: If calibration collapses distribution, fall back to raw probabilities
+            if cal_std < calibration_collapse_threshold:
+                print(f"    WARNING: Calibration collapsed probabilities (std={cal_std:.4f} < {calibration_collapse_threshold})")
+                print(f"    Falling back to RAW probabilities for this model")
+                self.calibrated_model = None  # Disable calibration
+        else:
+            print("  Calibration disabled (using raw probabilities)")
+            self.calibrated_model = None
 
         # Compute metrics
         y_train_pred = self.predict(X_train)
@@ -277,22 +310,50 @@ def tune_probability_threshold(
 ) -> Tuple[float, Dict]:
     """
     Tune probability threshold to maximize trading metrics.
+
+    Uses either quantile-based thresholds (adaptive to score distribution)
+    or fixed grid (legacy mode).
     """
     from backtest import Backtest
     from metrics import calculate_metrics
 
-    if thresholds is None:
-        thresholds = [0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65]
-
     print(f"\n  Tuning probability threshold...")
     print(f"  Probability distribution: min={y_proba.min():.3f}, "
-          f"median={np.median(y_proba):.3f}, max={y_proba.max():.3f}")
+          f"median={np.median(y_proba):.3f}, max={y_proba.max():.3f}, "
+          f"std={np.std(y_proba):.3f}")
+
+    # Generate candidate thresholds
+    if thresholds is None:
+        if config.validation.use_quantile_thresholds:
+            # QUANTILE-BASED APPROACH: Adapts to actual score distribution
+            quantiles = config.validation.threshold_quantiles
+            candidate_thresholds = np.quantile(y_proba, quantiles)
+            candidate_thresholds = np.unique(candidate_thresholds)  # Remove duplicates
+            print(f"  Using quantile-based thresholds: {candidate_thresholds}")
+        else:
+            # FIXED GRID (legacy)
+            candidate_thresholds = config.validation.threshold_fixed_grid
+            print(f"  Using fixed threshold grid: {candidate_thresholds}")
+    else:
+        candidate_thresholds = thresholds
+
+    # Calculate dynamic min_trades based on data size if enabled
+    if config.validation.scale_min_trades_by_data:
+        n_bars = len(df)
+        min_trades_required = max(
+            config.validation.min_trades_per_threshold,
+            int((n_bars / 1000.0) * config.validation.min_trades_per_1k_bars)
+        )
+    else:
+        min_trades_required = config.validation.min_trades_per_threshold
+
+    print(f"  Min trades per threshold: {min_trades_required}")
 
     best_threshold = 0.5
     best_pf = 0
     best_metrics = {}
 
-    for threshold in thresholds:
+    for threshold in candidate_thresholds:
         original_threshold = config.strategy.ml_prob_threshold
         config.strategy.ml_prob_threshold = threshold
 
@@ -304,17 +365,26 @@ def tune_probability_threshold(
             results = bt.run()
             trade_log = bt.get_trade_log()
 
-            if len(trade_log) == 0:
-                print(f"    Threshold {threshold:.2f}: 0 trades")
+            n_trades = len(trade_log)
+
+            if n_trades == 0:
+                print(f"    Threshold {threshold:.3f}: 0 trades")
+                continue
+
+            if n_trades < min_trades_required:
+                print(f"    Threshold {threshold:.3f}: {n_trades} trades (< {min_trades_required} min)")
                 continue
 
             equity_curve = results['equity']
             metrics = calculate_metrics(equity_curve, trade_log, config.risk.initial_capital)
 
-            if (metrics.total_trades >= 20 and
-                abs(metrics.max_drawdown_pct) <= 8.0 and
-                metrics.profit_factor > best_pf):
+            # Evaluate with configurable criteria
+            meets_criteria = (
+                metrics.profit_factor >= 1.0 and  # At least break-even
+                abs(metrics.max_drawdown_pct) <= config.validation.max_drawdown_pct
+            )
 
+            if meets_criteria and metrics.profit_factor > best_pf:
                 best_pf = metrics.profit_factor
                 best_threshold = threshold
                 best_metrics = {
@@ -325,20 +395,29 @@ def tune_probability_threshold(
                     'sharpe': metrics.sharpe_ratio
                 }
 
-            print(f"    Threshold {threshold:.2f}: {metrics.total_trades} trades, "
+            print(f"    Threshold {threshold:.3f}: {metrics.total_trades} trades, "
                   f"PF={metrics.profit_factor:.2f}, WR={metrics.win_rate*100:.1f}%, "
-                  f"DD={metrics.max_drawdown_pct:.1f}%")
+                  f"DD={metrics.max_drawdown_pct:.1f}%, Sharpe={metrics.sharpe_ratio:.2f}")
 
         except Exception as e:
-            print(f"    Threshold {threshold:.2f}: Error - {e}")
+            print(f"    Threshold {threshold:.3f}: Error - {e}")
 
         config.strategy.ml_prob_threshold = original_threshold
 
     if best_metrics:
-        print(f"  → Optimal threshold: {best_threshold:.2f} (PF={best_pf:.2f})")
+        print(f"  → Optimal threshold: {best_threshold:.3f} (PF={best_pf:.2f}, "
+              f"{best_metrics['trades']} trades)")
+
+        # DIAGNOSTIC: Analyze classifier quality at this threshold
+        above_threshold = y_proba >= best_threshold
+        if above_threshold.sum() > 0:
+            precision_at_threshold = y_true[above_threshold].mean()
+            print(f"  → Precision at threshold (hit rate): {precision_at_threshold*100:.1f}%")
     else:
-        print(f"  → No valid threshold found, using default 0.50")
-        best_threshold = 0.50
+        print(f"  → No valid threshold found (all below min criteria)")
+        # Fall back to median as a reasonable default
+        best_threshold = float(np.median(y_proba))
+        print(f"  → Using median probability as fallback: {best_threshold:.3f}")
 
     return best_threshold, best_metrics
 

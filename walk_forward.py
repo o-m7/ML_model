@@ -51,23 +51,37 @@ def evaluate_strategy_viability(wf_results: Dict, config: Config) -> bool:
     """
     Determine if a strategy is viable based on walk-forward results.
 
-    Criteria:
-    - Profit Factor >= 1.3
-    - Sharpe Ratio >= 0.5
-    - Max DD <= -8%
-    - Total trades >= 50
+    Criteria now pulled from config.validation:
+    - Profit Factor >= config.validation.min_profit_factor
+    - Sharpe Ratio >= config.validation.min_sharpe_ratio
+    - Max DD <= config.validation.max_drawdown_pct (as negative %)
+    - Total trades >= config.validation.min_total_trades
     """
     pf = wf_results['avg_profit_factor']
     sharpe = wf_results['avg_sharpe']
     dd = wf_results['avg_max_dd']
     trades = wf_results['total_trades']
 
+    # Use configurable viability filters
     is_viable = (
-        pf >= 1.3 and
-        sharpe >= 0.5 and
-        dd >= -8.0 and
-        trades >= 50
+        pf >= config.validation.min_profit_factor and
+        sharpe >= config.validation.min_sharpe_ratio and
+        dd >= -config.validation.max_drawdown_pct and
+        trades >= config.validation.min_total_trades
     )
+
+    # DIAGNOSTIC: Log rejection reasons
+    if not is_viable:
+        reasons = []
+        if pf < config.validation.min_profit_factor:
+            reasons.append(f"PF {pf:.2f} < {config.validation.min_profit_factor}")
+        if sharpe < config.validation.min_sharpe_ratio:
+            reasons.append(f"Sharpe {sharpe:.2f} < {config.validation.min_sharpe_ratio}")
+        if dd < -config.validation.max_drawdown_pct:
+            reasons.append(f"DD {dd:.1f}% < -{config.validation.max_drawdown_pct}%")
+        if trades < config.validation.min_total_trades:
+            reasons.append(f"Trades {trades} < {config.validation.min_total_trades}")
+        wf_results['rejection_reasons'] = reasons
 
     return is_viable
 

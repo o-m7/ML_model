@@ -259,6 +259,32 @@ class MonitoringConfig:
 
 
 @dataclass
+class ValidationConfig:
+    """Walk-forward validation and model selection configuration."""
+
+    # Probability calibration settings
+    enable_calibration: bool = True
+    calibration_method: str = 'isotonic'  # 'isotonic' or 'sigmoid'
+    calibration_collapse_threshold: float = 0.01  # Min std to consider calibration valid
+
+    # Threshold tuning settings
+    use_quantile_thresholds: bool = True  # If True, use quantiles; if False, use fixed grid
+    threshold_quantiles: List[float] = field(default_factory=lambda: [0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
+    threshold_fixed_grid: List[float] = field(default_factory=lambda: [0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65])
+    min_trades_per_threshold: int = 5  # Minimum trades to consider a threshold
+
+    # Strategy viability filters (for walk-forward model selection)
+    min_profit_factor: float = 1.3
+    min_sharpe_ratio: float = 0.5
+    max_drawdown_pct: float = 8.0
+    min_total_trades: int = 20  # Reduced from 50 - more realistic for small datasets
+
+    # Allow scaling min_trades by data size
+    scale_min_trades_by_data: bool = True
+    min_trades_per_1k_bars: float = 10.0  # If enabled, min_trades = (n_bars / 1000) * this
+
+
+@dataclass
 class Config:
     """Master configuration aggregating all sub-configs."""
 
@@ -269,6 +295,7 @@ class Config:
     risk: RiskConfig = field(default_factory=RiskConfig)
     costs: CostConfig = field(default_factory=CostConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    validation: ValidationConfig = field(default_factory=ValidationConfig)
     prop_eval: PropEvalConfig = field(default_factory=PropEvalConfig)
     monitoring: MonitoringConfig = field(default_factory=MonitoringConfig)
 
