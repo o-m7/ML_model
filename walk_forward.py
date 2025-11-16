@@ -112,21 +112,24 @@ def run_walk_forward_validation(
 
         # Train model on this fold
         from model_training import train_model_with_walk_forward
+        from feature_engineering import get_feature_columns
 
         # Use a subset of the train data for validation within training
         train_split = int(len(train_df) * 0.8)
         train_fold = train_df.iloc[:train_split]
         val_fold = train_df.iloc[train_split:]
 
-        model = TradingModel(config, symbol, timeframe)
-        model.train(
-            train_fold[model.feature_cols] if hasattr(model, 'feature_cols') else train_fold,
-            train_fold['target']
-        )
+        # Get feature columns
+        feature_cols = get_feature_columns(train_fold)
 
-        # Generate predictions for test set
-        from feature_engineering import get_feature_columns
-        feature_cols = get_feature_columns(test_df)
+        # Prepare training data
+        X_train = train_fold[feature_cols]
+        y_train = train_fold['target']
+        X_val = val_fold[feature_cols]
+        y_val = val_fold['target']
+
+        model = TradingModel(config, symbol, timeframe)
+        model.train(X_train, y_train, X_val, y_val)
 
         test_df_copy = test_df.copy()
         test_df_copy['ml_proba'] = model.predict_proba(test_df[feature_cols])
