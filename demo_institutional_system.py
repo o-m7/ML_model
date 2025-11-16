@@ -123,10 +123,16 @@ def demo_feature_engineering():
     for feat in feature_samples:
         if feat in df_features.columns:
             values = df_features[feat].dropna()
-            print(f"   {feat:25s}: mean={values.mean():8.4f}, "
-                  f"std={values.std():8.4f}, "
-                  f"min={values.min():8.4f}, "
-                  f"max={values.max():8.4f}")
+
+            # Handle categorical features differently
+            if pd.api.types.is_categorical_dtype(values):
+                value_counts = values.value_counts()
+                print(f"   {feat:25s}: categorical - {dict(value_counts)}")
+            else:
+                print(f"   {feat:25s}: mean={values.mean():8.4f}, "
+                      f"std={values.std():8.4f}, "
+                      f"min={values.min():8.4f}, "
+                      f"max={values.max():8.4f}")
 
     return df_features
 
