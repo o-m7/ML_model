@@ -34,8 +34,8 @@ AWS_SECRET_KEY = os.getenv('AWS_SECRET_ACCESS_KEY', 'o_u3GoSv8JHF3ZBS9NQsTseq6mb
 ENDPOINT_URL = 'https://files.massive.com'
 BUCKET_NAME = 'flatfiles'
 
-# Symbols (Massive.com uses C: prefix)
-SYMBOLS = ['C:XAUUSD', 'C:XAGUSD']
+# Symbols (Massive.com uses C: prefix with hyphen)
+SYMBOLS = ['C:XAU-USD', 'C:XAG-USD']
 TIMEFRAMES = ['5T', '15T', '30T', '1H']
 
 # Paths
