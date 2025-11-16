@@ -16,6 +16,8 @@ from io import BytesIO
 from dotenv import load_dotenv
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 load_dotenv()
 
@@ -39,6 +41,9 @@ TICKER_MAP = {
     'XAUUSD': 'C:XAU-USD',
     'XAGUSD': 'C:XAG-USD',
 }
+
+# Thread-safe printing
+print_lock = Lock()
 
 
 def fetch_quotes_day(date: datetime, ticker: str, max_retries: int = 3) -> pd.DataFrame:
@@ -141,8 +146,8 @@ def fetch_quotes_day(date: datetime, ticker: str, max_retries: int = 3) -> pd.Da
                 pass
 
 
-def download_quotes_month(symbol: str, year: int, month: int) -> pd.DataFrame:
-    """Download quotes for a single month, with caching."""
+def download_quotes_month(symbol: str, year: int, month: int, month_idx: int = 0, total_months: int = 0) -> pd.DataFrame:
+    """Download quotes for a single month, with caching. Thread-safe."""
     ticker = TICKER_MAP[symbol]
 
     # Check cache first
@@ -151,10 +156,18 @@ def download_quotes_month(symbol: str, year: int, month: int) -> pd.DataFrame:
     cache_file = cache_dir / f"{symbol}_{year}_{month:02d}_raw.parquet"
 
     if cache_file.exists():
-        print(f"  ✓ Using cached data for {year}-{month:02d}")
+        with print_lock:
+            if total_months > 0:
+                print(f"[{month_idx}/{total_months}] {year}-{month:02d} ✓ Using cache")
+            else:
+                print(f"  ✓ Using cached data for {year}-{month:02d}")
         return pd.read_parquet(cache_file)
 
-    print(f"  📥 Downloading {year}-{month:02d}...")
+    with print_lock:
+        if total_months > 0:
+            print(f"[{month_idx}/{total_months}] {year}-{month:02d} 📥 Downloading...")
+        else:
+            print(f"  📥 Downloading {year}-{month:02d}...")
 
     # Determine date range for this month
     start_date = datetime(year, month, 1)
@@ -179,7 +192,8 @@ def download_quotes_month(symbol: str, year: int, month: int) -> pd.DataFrame:
         current_date += timedelta(days=1)
 
     if not all_data:
-        print(f"     ⚠️  No data found")
+        with print_lock:
+            print(f"     ⚠️  No data found for {year}-{month:02d}")
         return pd.DataFrame()
 
     # Combine all days
@@ -191,13 +205,17 @@ def download_quotes_month(symbol: str, year: int, month: int) -> pd.DataFrame:
     df.to_parquet(cache_file, index=False, compression='snappy')
 
     cache_size_mb = cache_file.stat().st_size / 1024 / 1024
-    print(f"     ✓ {len(df):,} quotes | {days_processed} days | {cache_size_mb:.1f} MB cached")
+    with print_lock:
+        if total_months > 0:
+            print(f"[{month_idx}/{total_months}] {year}-{month:02d} ✅ {len(df):,} quotes | {cache_size_mb:.1f} MB")
+        else:
+            print(f"     ✓ {len(df):,} quotes | {days_processed} days | {cache_size_mb:.1f} MB cached")
 
     return df
 
 
-def download_quotes_range(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
-    """Download quotes for date range, processing by month with resume capability."""
+def download_quotes_range(symbol: str, start_date: str, end_date: str, max_workers: int = 3) -> pd.DataFrame:
+    """Download quotes for date range, processing months in parallel with resume capability."""
 
     print(f"\n{'='*80}")
     print(f"DOWNLOADING {symbol} QUOTES FROM POLYGON S3")
@@ -205,7 +223,7 @@ def download_quotes_range(symbol: str, start_date: str, end_date: str) -> pd.Dat
     print(f"Ticker: {TICKER_MAP[symbol]}")
     print(f"Start: {start_date}")
     print(f"End: {end_date}")
-    print(f"Strategy: Monthly chunks with parquet caching")
+    print(f"Strategy: Parallel monthly chunks ({max_workers} workers) with parquet caching")
 
     start = datetime.strptime(start_date, '%Y-%m-%d')
     end = datetime.strptime(end_date, '%Y-%m-%d')
@@ -224,23 +242,37 @@ def download_quotes_range(symbol: str, start_date: str, end_date: str) -> pd.Dat
     print(f"Total months: {len(months_to_download)}")
     print()
 
-    # Download each month
-    monthly_data = []
-    for idx, (year, month) in enumerate(months_to_download, 1):
-        print(f"[{idx}/{len(months_to_download)}] Processing {year}-{month:02d}")
+    # Download months in parallel
+    monthly_data = {}  # Use dict to preserve order
 
-        df_month = download_quotes_month(symbol, year, month)
+    def download_wrapper(args):
+        idx, year, month = args
+        df = download_quotes_month(symbol, year, month, idx, len(months_to_download))
+        return (year, month), df
 
-        if not df_month.empty:
-            monthly_data.append(df_month)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        futures = []
+        for idx, (year, month) in enumerate(months_to_download, 1):
+            future = executor.submit(download_wrapper, (idx, year, month))
+            futures.append(future)
+
+        # Collect results as they complete
+        for future in as_completed(futures):
+            (year, month), df = future.result()
+            if not df.empty:
+                monthly_data[(year, month)] = df
 
     if not monthly_data:
         print(f"\n❌ No quote data found for {symbol}")
         return pd.DataFrame()
 
-    # Combine all months
+    # Sort by (year, month) and combine
     print(f"\n📊 Combining {len(monthly_data)} months of data...")
-    df = pd.concat(monthly_data, ignore_index=True)
+    sorted_months = sorted(monthly_data.keys())
+    monthly_dfs = [monthly_data[key] for key in sorted_months]
+
+    df = pd.concat(monthly_dfs, ignore_index=True)
     df = df.sort_values('timestamp')
     df = df.drop_duplicates(subset='timestamp', keep='last')
 
