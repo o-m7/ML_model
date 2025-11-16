@@ -299,9 +299,9 @@ def save_quotes(df: pd.DataFrame, symbol: str, timeframe: str):
 def main():
     """Main download pipeline for quotes."""
 
-    # Date range: 2020-2025
-    start_date = "2020-01-01"
-    end_date = "2025-11-14"
+    # Date range: 2022-2025 (recent 4 years for spread analysis)
+    start_date = "2022-01-01"
+    end_date = "2025-11-04"
 
     TIMEFRAMES = ['5T', '15T', '30T', '1H']
 
