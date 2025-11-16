@@ -198,7 +198,7 @@ def main():
 
     # Date range
     start_date = "2019-01-01"
-    end_date = "2024-11-14"
+    end_date = "2025-11-14"
 
     print("\n" + "="*80)
     print("POLYGON S3 DATA DOWNLOAD & FEATURE GENERATION")
