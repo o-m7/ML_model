@@ -44,31 +44,42 @@ def main():
         print("\n❌ No data available. Cannot proceed.")
         sys.exit(1)
 
-    # Check data length
-    if 'timestamp' in df_gold.columns:
-        df_gold['timestamp'] = pd.to_datetime(df_gold['timestamp'])
-        date_range = (df_gold['timestamp'].max() - df_gold['timestamp'].min()).days
-        months_available = date_range / 30
-
-        print(f"\n📊 Data available: {len(df_gold):,} bars ({months_available:.1f} months)")
-
-        # Adjust parameters based on available data
-        if months_available < 3:
-            print("\n⚠️  WARNING: Less than 3 months of data")
-            print("   Using minimal config: 1 month train, 2 weeks test")
-            train_months = 1
-            test_months = 0.5  # 2 weeks
-        elif months_available < 5:
-            print("\n📅 Using short config: 2 months train, 1 month test")
-            train_months = 2
-            test_months = 1
+    # Handle timestamp in index or column
+    if 'timestamp' not in df_gold.columns:
+        if isinstance(df_gold.index, pd.DatetimeIndex):
+            df_gold = df_gold.reset_index()
+            if 'index' in df_gold.columns:
+                df_gold = df_gold.rename(columns={'index': 'timestamp'})
+            elif df_gold.index.name:
+                df_gold = df_gold.rename(columns={df_gold.index.name: 'timestamp'})
         else:
-            print("\n📅 Using standard config: 3 months train, 1 month test")
-            train_months = 3
-            test_months = 1
-    else:
-        print("\n⚠️  No timestamp column, using default config")
+            print("\n❌ No timestamp found in data!")
+            sys.exit(1)
+
+    df_gold['timestamp'] = pd.to_datetime(df_gold['timestamp'])
+    date_range = (df_gold['timestamp'].max() - df_gold['timestamp'].min()).days
+    months_available = date_range / 30
+
+    print(f"\n📊 Data available: {len(df_gold):,} bars ({months_available:.1f} months, {date_range} days)")
+
+    # Adjust parameters based on available data
+    if months_available < 1.5:
+        print("\n⚠️  VERY LIMITED DATA: Less than 1.5 months")
+        print("   Using ultra-minimal config: 3 weeks train, 1 week test")
+        train_months = 0.75  # 3 weeks
+        test_months = 0.25   # 1 week
+    elif months_available < 3:
+        print("\n⚠️  LIMITED DATA: Less than 3 months")
+        print("   Using minimal config: 1 month train, 2 weeks test")
+        train_months = 1
+        test_months = 0.5  # 2 weeks
+    elif months_available < 5:
+        print("\n📅 Using short config: 2 months train, 1 month test")
         train_months = 2
+        test_months = 1
+    else:
+        print("\n📅 Using standard config: 3 months train, 1 month test")
+        train_months = 3
         test_months = 1
 
     # Create validator with adjusted periods
@@ -83,9 +94,7 @@ def main():
     print(f"   Training period: {train_months} months")
     print(f"   Test period: {test_months} months")
 
-    if 'timestamp' not in df_gold.columns:
-        df_gold = df_gold.reset_index()
-
+    # Ensure timestamp is a column (already handled above)
     df_gold = df_gold.sort_values('timestamp')
     min_date = df_gold['timestamp'].min()
     max_date = df_gold['timestamp'].max()
@@ -101,7 +110,11 @@ def main():
         test_end = current_date + pd.DateOffset(months=test_months)
         test_df = df_gold[(df_gold['timestamp'] >= current_date) & (df_gold['timestamp'] < test_end)].copy()
 
-        if len(train_df) > 500 and len(test_df) > 50:  # Minimum viable sizes
+        # Adjust minimum sizes based on available data
+        min_train = max(200, int(len(df_gold) * 0.3))  # At least 30% of data or 200 bars
+        min_test = max(50, int(len(df_gold) * 0.1))    # At least 10% of data or 50 bars
+
+        if len(train_df) > min_train and len(test_df) > min_test:
             segments.append((train_df, test_df))
             print(f"   Segment {len(segments)}: Train={len(train_df)}, Test={len(test_df)} "
                   f"(Test: {current_date.date()} to {test_end.date()})")
