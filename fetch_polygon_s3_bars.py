@@ -14,15 +14,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# S3 Configuration
+# S3 Configuration - matches .env file naming
 s3_client = boto3.client(
     's3',
-    aws_access_key_id=os.getenv('POLYGON_S3_ACCESS_KEY'),
-    aws_secret_access_key=os.getenv('POLYGON_S3_SECRET_KEY'),
-    endpoint_url=os.getenv('POLYGON_S3_ENDPOINT')
+    aws_access_key_id=os.getenv('Access_Key_ID'),
+    aws_secret_access_key=os.getenv('Secret_Access_Key'),
+    endpoint_url=os.getenv('S3_Endpoint')
 )
 
-S3_BUCKET = os.getenv('POLYGON_S3_BUCKET', 'flatfiles')
+S3_BUCKET = os.getenv('Bucket', 'flatfiles')
 
 # Ticker mapping
 TICKER_MAP = {
