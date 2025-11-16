@@ -103,12 +103,13 @@ class TradingConfig:
     min_profit_threshold_pct: float = 0.0001  # 0.01% minimum move (relaxed from 0.02%)
 
     # Threshold optimization
-    signal_quantile: float = 0.85  # Top 15% of signals (relaxed from 10% for more opportunities)
+    signal_quantile: float = 0.75  # Top 25% of signals (relaxed for more opportunities)
     min_trades_per_segment: int = 20
 
-    # Quote-based filtering
-    max_spread_percentile: float = 0.90  # Skip trades when spread > 90th percentile
-    min_quote_count: int = 3  # Minimum quotes per bar for trade execution
+    # Quote-based filtering (disabled by default - set to False to skip filtering)
+    enable_quote_filtering: bool = False  # Enable/disable quote-based filters
+    max_spread_percentile: float = 0.95  # Skip trades when spread > 95th percentile (very conservative)
+    min_quote_count: int = 1  # Minimum quotes per bar for trade execution (relaxed)
 
     # Viability criteria (what makes a strategy acceptable)
     min_profit_factor: float = 1.5
@@ -832,17 +833,25 @@ class ThresholdOptimizer:
             num_signals = signals.sum()
 
             if num_signals == 0:
-                # Relax threshold until we get minimum trades
-                for quantile in [0.85, 0.80, 0.75, 0.70]:
+                # Relax threshold until we get some signals
+                print(f"   ⚠️  No signals at quantile {config.signal_quantile:.2f}, relaxing threshold...")
+                for quantile in [0.70, 0.65, 0.60, 0.55, 0.50]:
                     threshold = np.quantile(predictions, quantile)
                     signals = (predictions >= threshold).astype(int)
                     num_signals = signals.sum()
+                    print(f"   Trying quantile {quantile:.2f}: {num_signals} signals")
                     if num_signals >= config.min_trades_per_segment:
                         break
 
-            print(f"   Quantile: {config.signal_quantile:.2f}")
-            print(f"   Threshold: {threshold:.4f}")
-            print(f"   Signals: {num_signals}")
+                # Final safety net - if still no signals, use median
+                if num_signals == 0:
+                    threshold = np.median(predictions)
+                    signals = (predictions >= threshold).astype(int)
+                    num_signals = signals.sum()
+                    print(f"   Using median threshold as fallback: {num_signals} signals")
+
+            print(f"   Final Quantile/Threshold: {threshold:.4f}")
+            print(f"   Signals Generated: {num_signals}")
 
         elif method == 'profit':
             # Try different thresholds and pick the one with best profit
@@ -957,12 +966,24 @@ class RealisticBacktester:
 
         # Check if quote features are available for filtering
         has_quote_features = 'q_spread_mean' in df.columns and 'q_quote_count' in df.columns
-        if has_quote_features:
-            # Calculate spread percentile threshold for filtering
-            spread_threshold = df['q_spread_mean'].quantile(self.config.max_spread_percentile)
-            print(f"   Quote-based filtering enabled:")
-            print(f"     - Max spread threshold: {spread_threshold:.4f}")
-            print(f"     - Min quote count: {self.config.min_quote_count}")
+        spread_threshold = None
+
+        if has_quote_features and self.config.enable_quote_filtering:
+            # Calculate spread percentile threshold for filtering (only on non-NaN values)
+            valid_spreads = df['q_spread_mean'].dropna()
+            if len(valid_spreads) > 0:
+                spread_threshold = valid_spreads.quantile(self.config.max_spread_percentile)
+                print(f"   Quote-based filtering ENABLED:")
+                print(f"     - Max spread threshold: {spread_threshold:.4f}")
+                print(f"     - Min quote count: {self.config.min_quote_count}")
+            else:
+                print(f"   Quote-based filtering DISABLED (no valid quote data)")
+                spread_threshold = None
+        else:
+            if not self.config.enable_quote_filtering:
+                print(f"   Quote-based filtering DISABLED (config setting)")
+            else:
+                print(f"   Quote-based filtering DISABLED (quote features not available)")
 
         trades = []
         equity = self.config.initial_capital  # Starting capital from config
@@ -975,16 +996,20 @@ class RealisticBacktester:
         i = 0
         while i < len(df) - 1:
             if df.loc[i, 'signal'] == 1:
-                # Apply quote-based filters if available
-                if has_quote_features:
-                    # Skip if spread is too wide
-                    if df.loc[i, 'q_spread_mean'] > spread_threshold:
+                # Apply quote-based filters if enabled and spread threshold is set
+                if spread_threshold is not None:
+                    # Only filter if we have valid quote data for this bar
+                    spread_val = df.loc[i, 'q_spread_mean']
+                    quote_count_val = df.loc[i, 'q_quote_count']
+
+                    # Skip if spread data is valid and too wide
+                    if pd.notna(spread_val) and spread_val > spread_threshold:
                         filtered_by_spread += 1
                         i += 1
                         continue
 
-                    # Skip if insufficient liquidity (too few quotes)
-                    if df.loc[i, 'q_quote_count'] < self.config.min_quote_count:
+                    # Skip if quote count is valid and insufficient
+                    if pd.notna(quote_count_val) and quote_count_val < self.config.min_quote_count:
                         filtered_by_liquidity += 1
                         i += 1
                         continue
