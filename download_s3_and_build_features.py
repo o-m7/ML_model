@@ -29,8 +29,8 @@ S3_BUCKET = os.getenv('Bucket', 'flatfiles')
 # Symbols to download
 SYMBOLS = ['XAUUSD', 'XAGUSD']
 TICKER_MAP = {
-    'XAUUSD': 'C:XAUUSD',
-    'XAGUSD': 'C:XAGUSD',
+    'XAUUSD': 'C:XAU-USD',
+    'XAGUSD': 'C:XAG-USD',
 }
 
 # Timeframes to resample to
