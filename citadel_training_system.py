@@ -113,30 +113,22 @@ MIN_EXPECTANCY = 0.05       # Average R per trade (small positive edge)
 # DATA LOADING AND RESAMPLING
 # ============================================================================
 
-def load_data(symbol: str) -> pd.DataFrame:
+def load_data(symbol: str, timeframe: str) -> pd.DataFrame:
     """
-    Load raw OHLCV data for a symbol.
+    Load data with pre-calculated features for a symbol and timeframe.
 
-    Expects data in feature_store/{symbol}/{symbol}_5T.parquet (or similar).
-    You can adapt this to load from your actual data source.
+    Expects data in feature_store/{symbol}/{symbol}_{timeframe}.parquet
+    with TA-Lib features already calculated.
 
     Returns:
-        DataFrame with DatetimeIndex and columns: open, high, low, close, volume
+        DataFrame with DatetimeIndex and all features
     """
-    # Try to load 5T data as base (finest granularity)
-    data_path = DATA_DIR / symbol / f"{symbol}_5T.parquet"
+    data_path = DATA_DIR / symbol / f"{symbol}_{timeframe}.parquet"
 
     if not data_path.exists():
-        # Try other timeframes or raise error
         raise FileNotFoundError(f"Data not found for {symbol} at {data_path}")
 
     df = pd.read_parquet(data_path)
-
-    # Ensure proper columns
-    required_cols = ['open', 'high', 'low', 'close', 'volume']
-    for col in required_cols:
-        if col not in df.columns:
-            raise ValueError(f"Missing required column: {col}")
 
     # Ensure DatetimeIndex
     if not isinstance(df.index, pd.DatetimeIndex):
@@ -152,41 +144,13 @@ def load_data(symbol: str) -> pd.DataFrame:
     # Sort by time
     df = df.sort_index()
 
-    # Keep only OHLCV
-    df = df[required_cols].copy()
-
-    print(f"✅ Loaded {symbol}: {len(df):,} bars from {df.index[0]} to {df.index[-1]}")
+    print(f"✅ Loaded {symbol} {timeframe}: {len(df):,} bars, {len(df.columns)} features, {df.index[0]} to {df.index[-1]}")
 
     return df
 
 
-def resample_to_timeframes(df: pd.DataFrame, timeframes: List[str]) -> Dict[str, pd.DataFrame]:
-    """
-    Resample OHLCV data to multiple timeframes.
-
-    Args:
-        df: Base OHLCV dataframe with DatetimeIndex
-        timeframes: List of timeframe strings (e.g., ["5T", "15T", "1H"])
-
-    Returns:
-        Dict mapping timeframe -> resampled DataFrame
-    """
-    resampled = {}
-
-    for tf in timeframes:
-        # Resample with proper OHLCV aggregation
-        df_tf = df.resample(tf, label='left', closed='left').agg({
-            'open': 'first',
-            'high': 'max',
-            'low': 'min',
-            'close': 'last',
-            'volume': 'sum'
-        }).dropna()
-
-        resampled[tf] = df_tf
-        print(f"   Resampled to {tf}: {len(df_tf):,} bars")
-
-    return resampled
+# Removed: resample_to_timeframes - no longer needed
+# Data is loaded directly per timeframe with features already calculated
 
 
 # ============================================================================
@@ -887,26 +851,16 @@ def train_all_models():
         print(f"PROCESSING SYMBOL: {symbol}")
         print(f"{'='*80}")
 
-        # Load base data
-        try:
-            base_df = load_data(symbol)
-        except Exception as e:
-            print(f"❌ Failed to load data for {symbol}: {e}")
-            continue
-
-        # Resample to all timeframes
-        resampled_data = resample_to_timeframes(base_df, TIMEFRAMES)
-
         for timeframe in TIMEFRAMES:
             try:
-                df = resampled_data[timeframe]
+                # Load data with pre-calculated TA-Lib features
+                print(f"\n📥 Loading {symbol} {timeframe} with features...")
+                df = load_data(symbol, timeframe)
 
-                # Build features
-                print(f"\n🔧 Building features for {symbol} {timeframe}...")
-                df = build_features(df, symbol, timeframe)
-                print(f"✅ Features built: {len(df.columns)} columns, {len(df):,} bars")
+                # Features already calculated - skip build_features()
+                print(f"✅ Using pre-calculated features: {len(df.columns)} columns, {len(df):,} bars")
 
-                # Build labels
+                # Build labels (still needed for training)
                 print(f"\n🏷️  Creating labels...")
                 df = build_labels(df, symbol, timeframe)
                 print(f"✅ Labels created: {len(df):,} samples")
