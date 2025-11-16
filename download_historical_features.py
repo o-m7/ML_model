@@ -138,15 +138,23 @@ def download_and_process_symbol(symbol, start_date, end_date):
 
     s3 = setup_s3_client()
 
-    # Download all minute data
-    print("📥 Downloading minute data...")
-    all_minute_bars = []
-
+    # Calculate total days
     current = datetime.strptime(start_date, '%Y-%m-%d')
     end = datetime.strptime(end_date, '%Y-%m-%d')
+    total_days = (end - current).days + 1
 
+    # Download all minute data
+    print("📥 Downloading minute data...")
+    print(f"   Total days to process: {total_days}")
+    print()
+
+    all_minute_bars = []
     day_count = 0
     success_count = 0
+
+    # Progress tracking
+    last_update = datetime.now()
+    start_time = datetime.now()
 
     while current <= end:
         date_str = current.strftime('%Y-%m-%d')
@@ -155,13 +163,37 @@ def download_and_process_symbol(symbol, start_date, end_date):
         if df_day is not None:
             all_minute_bars.append(df_day)
             success_count += 1
-            if success_count % 10 == 0:
-                print(f"  ✓ {success_count} days downloaded...", end='\r')
 
         day_count += 1
+
+        # Update progress every second or every 50 days
+        now = datetime.now()
+        if (now - last_update).total_seconds() >= 1.0 or day_count % 50 == 0:
+            progress_pct = (day_count / total_days) * 100
+            elapsed = (now - start_time).total_seconds()
+
+            # Estimate time remaining
+            if day_count > 0:
+                rate = day_count / elapsed  # days per second
+                remaining_days = total_days - day_count
+                eta_seconds = remaining_days / rate if rate > 0 else 0
+                eta_str = f"{int(eta_seconds // 60)}m {int(eta_seconds % 60)}s"
+            else:
+                eta_str = "calculating..."
+
+            # Progress bar
+            bar_length = 40
+            filled = int(bar_length * day_count / total_days)
+            bar = '█' * filled + '░' * (bar_length - filled)
+
+            print(f"\r  [{bar}] {progress_pct:.1f}% | {day_count}/{total_days} days | {success_count} successful | ETA: {eta_str}  ", end='', flush=True)
+            last_update = now
+
         current += timedelta(days=1)
 
-    print(f"  ✓ Downloaded {success_count}/{day_count} days")
+    # Final update
+    elapsed = (datetime.now() - start_time).total_seconds()
+    print(f"\n  ✓ Downloaded {success_count}/{day_count} days in {int(elapsed)}s ({success_count/elapsed:.1f} days/sec)\n")
 
     if not all_minute_bars:
         print(f"  ❌ No data found for {symbol}")
@@ -175,8 +207,8 @@ def download_and_process_symbol(symbol, start_date, end_date):
     print(f"  📅 Range: {minute_df.index.min()} to {minute_df.index.max()}")
 
     # Process each timeframe
-    for timeframe in TIMEFRAMES:
-        print(f"\n🔧 Processing {timeframe}...")
+    for i, timeframe in enumerate(TIMEFRAMES, 1):
+        print(f"\n🔧 Processing {timeframe} ({i}/{len(TIMEFRAMES)})...")
 
         # Resample to timeframe
         if timeframe == '1H':
@@ -184,6 +216,7 @@ def download_and_process_symbol(symbol, start_date, end_date):
         else:
             resample_rule = timeframe
 
+        print(f"  ⏳ Resampling...", end='', flush=True)
         df_tf = minute_df.resample(resample_rule).agg({
             'open': 'first',
             'high': 'max',
@@ -192,28 +225,30 @@ def download_and_process_symbol(symbol, start_date, end_date):
             'volume': 'sum'
         }).dropna()
 
-        print(f"  📊 Resampled: {len(df_tf):,} bars")
+        print(f"\r  ✓ Resampled: {len(df_tf):,} bars")
 
         # Calculate features
-        print(f"  🧮 Calculating features...")
+        print(f"  ⏳ Calculating {timeframe} features...", end='', flush=True)
         df_features = build_feature_frame(df_tf)
 
         if df_features is None or df_features.empty:
-            print(f"  ❌ Feature calculation failed")
+            print(f"\r  ❌ Feature calculation failed")
             continue
 
         feature_count = len(df_features.columns)
-        print(f"  ✓ Features: {feature_count} columns")
+        print(f"\r  ✓ Calculated {feature_count} features for {len(df_features):,} bars")
 
         # Save to parquet
         output_dir = FEATURE_STORE_DIR / symbol
         output_dir.mkdir(parents=True, exist_ok=True)
 
         output_file = output_dir / f"{symbol}_{timeframe}.parquet"
+
+        print(f"  ⏳ Saving to parquet...", end='', flush=True)
         df_features.to_parquet(output_file, compression='snappy')
 
         file_size_mb = output_file.stat().st_size / 1024 / 1024
-        print(f"  💾 Saved: {output_file} ({file_size_mb:.1f} MB)")
+        print(f"\r  ✓ Saved: {output_file.name} ({file_size_mb:.1f} MB)")
 
     print(f"\n✅ {symbol} complete!\n")
 
