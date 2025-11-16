@@ -14,6 +14,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from io import BytesIO
 from dotenv import load_dotenv
+import tempfile
+import time
 
 load_dotenv()
 
@@ -39,19 +41,41 @@ TICKER_MAP = {
 }
 
 
-def fetch_quotes_day(date: datetime, ticker: str) -> pd.DataFrame:
-    """Fetch quote data for a specific day and ticker from S3."""
+def fetch_quotes_day(date: datetime, ticker: str, max_retries: int = 3) -> pd.DataFrame:
+    """Fetch quote data for a specific day and ticker from S3 using efficient download_file."""
     year = date.strftime('%Y')
     month = date.strftime('%m')
     date_str = date.strftime('%Y-%m-%d')
 
     object_key = f'global_forex/quotes_v1/{year}/{month}/{date_str}.csv.gz'
 
-    try:
-        response = s3.get_object(Bucket=BUCKET, Key=object_key)
-        compressed_data = response['Body'].read()
+    # Use temp file for efficient download
+    temp_file = None
 
-        with gzip.GzipFile(fileobj=BytesIO(compressed_data)) as gz:
+    try:
+        # Create temp file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.csv.gz')
+        temp_path = temp_file.name
+        temp_file.close()
+
+        # Download with retries
+        for attempt in range(max_retries):
+            try:
+                s3.download_file(BUCKET, object_key, temp_path)
+                break
+            except s3.exceptions.NoSuchKey:
+                return pd.DataFrame()
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                    time.sleep(wait_time)
+                else:
+                    if "NoSuchKey" not in str(e) and "404" not in str(e):
+                        print(f"    ⚠️  Failed after {max_retries} retries on {date_str}: {e}")
+                    return pd.DataFrame()
+
+        # Read downloaded file
+        with gzip.open(temp_path, 'rt') as gz:
             df = pd.read_csv(gz)
 
         # Filter for specific ticker
@@ -103,12 +127,18 @@ def fetch_quotes_day(date: datetime, ticker: str) -> pd.DataFrame:
 
         return df
 
-    except s3.exceptions.NoSuchKey:
-        return pd.DataFrame()
     except Exception as e:
         if "NoSuchKey" not in str(e) and "404" not in str(e):
             print(f"    ⚠️  Error on {date_str}: {e}")
         return pd.DataFrame()
+
+    finally:
+        # Clean up temp file
+        if temp_file is not None:
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
 
 
 def download_quotes_range(symbol: str, start_date: str, end_date: str) -> pd.DataFrame:
