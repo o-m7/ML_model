@@ -128,22 +128,22 @@ class TradingConfig:
 
     # Risk management
     initial_capital: float = 25000.0  # Starting capital
-    max_position_size: float = 1.0  # Max lots/units
-    risk_per_trade_pct: float = 0.01  # 1% risk per trade (reduced from 2% for better risk management)
+    max_position_size: float = 0.5  # Max lots/units (reduced from 1.0 for safety)
+    risk_per_trade_pct: float = 0.005  # 0.5% risk per trade (reduced from 1% for safety)
     max_daily_drawdown_pct: float = 0.05  # 5% max daily DD
 
     # Label creation parameters (TP/SL-based)
     max_holding_bars: int = 8  # Maximum bars to hold trade (5T: 40min, 15T: 120min)
-    tp_atr_multiple: float = 2.0  # Take profit = entry ± (2.0 × ATR) - wider for more trades
+    tp_atr_multiple: float = 2.5  # Take profit = entry ± (2.5 × ATR) - wider TP for better R:R
     sl_atr_multiple: float = 1.0  # Stop loss = entry ± (1.0 × ATR)
-    min_r_multiple: float = 0.3  # Minimum R multiple to consider trade valid (lowered from 0.5)
+    min_r_multiple: float = 0.5  # Minimum R multiple to consider trade valid
     use_tpsl_labels: bool = True  # Use TP/SL-based labels vs simple forward return
 
     # Threshold optimization
     use_fixed_threshold: bool = True  # Use fixed threshold instead of quantile
-    fixed_threshold: float = 0.50  # Trade when model predicts >50% probability (lowered from 0.55)
-    signal_quantile: float = 0.70  # Fallback: Top 30% of signals if using quantile method
-    min_trades_per_segment: int = 5  # Minimum viable trades per segment (lowered from 10)
+    fixed_threshold: float = 0.65  # Trade when model predicts >65% probability (increased for selectivity)
+    signal_quantile: float = 0.80  # Fallback: Top 20% of signals if using quantile method
+    min_trades_per_segment: int = 5  # Minimum viable trades per segment
 
     # Quote-based filtering (disabled by default - set to False to skip filtering)
     enable_quote_filtering: bool = False  # Enable/disable quote-based filters
@@ -750,15 +750,15 @@ class EnsembleModelTrainer:
         scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
         model = xgb.XGBClassifier(
-            n_estimators=200,  # Moderate complexity
-            max_depth=5,  # Balanced depth for gold intraday patterns
-            learning_rate=0.05,  # Moderate learning rate
-            subsample=0.8,  # Standard subsampling
-            colsample_bytree=0.8,  # Standard feature sampling
+            n_estimators=100,  # Reduced to prevent overfitting
+            max_depth=3,  # Shallow trees to reduce variance
+            learning_rate=0.03,  # Lower learning rate for stability
+            min_child_weight=5,  # Increase regularization
+            subsample=0.8,  # Sample 80% of data
+            colsample_bytree=0.8,  # Sample 80% of features
             gamma=1.0,  # Moderate complexity control
             reg_alpha=0.1,  # Light L1 regularization
             reg_lambda=1.0,  # Light L2 regularization
-            min_child_weight=3,  # Allow learning from smaller patterns
             scale_pos_weight=scale_pos_weight,
             random_state=42,
             n_jobs=-1,
@@ -789,16 +789,16 @@ class EnsembleModelTrainer:
         scale_pos_weight = (y_train == 0).sum() / (y_train == 1).sum()
 
         model = lgb.LGBMClassifier(
-            n_estimators=200,  # Moderate complexity
-            max_depth=5,  # Balanced depth
-            num_leaves=31,  # Standard leaf count
-            learning_rate=0.05,  # Moderate learning rate
+            n_estimators=100,  # Reduced to prevent overfitting
+            max_depth=3,  # Shallow trees
+            num_leaves=8,  # Reduced from 31 (2^3 = 8)
+            learning_rate=0.03,  # Lower learning rate
             subsample=0.8,  # Standard subsampling
             colsample_bytree=0.8,  # Standard feature sampling
-            reg_alpha=0.1,  # Light L1 regularization
-            reg_lambda=1.0,  # Light L2 regularization
-            min_child_samples=20,  # Minimum samples per leaf
-            min_split_gain=0.01,  # Allow more splits
+            reg_alpha=0.5,  # Stronger L1 regularization
+            reg_lambda=2.0,  # Stronger L2 regularization
+            min_child_samples=30,  # Increased for regularization
+            min_split_gain=0.05,  # Require more gain for splits
             scale_pos_weight=scale_pos_weight,
             random_state=42,
             n_jobs=-1,
@@ -1465,7 +1465,9 @@ class WalkForwardValidator:
             raise ValueError(f"Invalid initial_capital: {config.initial_capital}. Must be > 0")
         self.cumulative_equity = config.initial_capital  # Track equity across all segments
         self.all_trades = []  # Accumulate all trades for cumulative analysis
+        self.min_equity_floor = config.initial_capital * 0.20  # Stop if equity drops below 20%
         print(f"\n💰 Walk-Forward Validator initialized with ${self.cumulative_equity:,.2f} starting capital")
+        print(f"   Minimum equity floor: ${self.min_equity_floor:,.2f} (20% of initial)")
 
     def create_segments(self, df: pd.DataFrame,
                        train_months: int = 6,
@@ -1581,6 +1583,13 @@ class WalkForwardValidator:
             threshold, threshold_metrics = ThresholdOptimizer.find_optimal_threshold(
                 val_predictions, val_split['target'].values, self.config, method='quantile'
             )
+
+            # Check if equity has dropped below minimum floor
+            if self.cumulative_equity < self.min_equity_floor:
+                print(f"\n   ⚠️  EQUITY BELOW MINIMUM FLOOR!")
+                print(f"   Current: ${self.cumulative_equity:,.2f}, Floor: ${self.min_equity_floor:,.2f}")
+                print(f"   Resetting equity to initial capital: ${self.config.initial_capital:,.2f}")
+                self.cumulative_equity = self.config.initial_capital
 
             # Backtest on test set with cumulative equity
             backtester = RealisticBacktester(self.config)
