@@ -80,7 +80,41 @@ def to_serializable(obj):
 
 @dataclass
 class TradingConfig:
-    """Configuration for trading strategy and risk management."""
+    """
+    Configuration for trading strategy and risk management.
+
+    TRADING STRATEGY (for model implementation):
+    ============================================
+    1. ENTRY SIGNAL:
+       - Model predicts probability of profitable trade
+       - Enter LONG when: probability > fixed_threshold (default 0.50)
+       - Only enter if: spread < max acceptable, liquidity sufficient
+
+    2. POSITION SIZING:
+       - Risk per trade: 1% of current equity
+       - Position size (lots) = (equity × 0.01) / (SL_distance × $100/lot)
+       - Max position: 1.0 lots
+
+    3. TAKE PROFIT:
+       - TP_price = entry_price + (tp_atr_multiple × ATR)
+       - Default: TP = entry + 2.0×ATR
+
+    4. STOP LOSS:
+       - SL_price = entry_price - (sl_atr_multiple × ATR)
+       - Default: SL = entry - 1.0×ATR
+
+    5. EXIT RULES:
+       - Exit at TP if price hits TP_price
+       - Exit at SL if price hits SL_price
+       - Exit after max_holding_bars (default 8 bars = 2 hours for 15T)
+       - Whichever comes first
+
+    6. COST MODEL:
+       - Entry: pay (close + spread/2 + slippage)
+       - Exit: receive (close - spread/2 - slippage)
+       - Spread: $0.30/oz for XAUUSD
+       - Slippage: 0.01% of price
+    """
 
     # Asset parameters
     symbol: str = "XAUUSD"
@@ -1722,6 +1756,69 @@ def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quo
 
         print(f"   Generated {len(df)} synthetic bars")
         return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRODUCTION SIGNAL GENERATOR (for deployment)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def generate_trading_signal(bar: pd.Series, model_probability: float, config: TradingConfig,
+                           current_equity: float) -> Optional[Dict]:
+    """
+    Generate a trading signal based on the implemented strategy.
+
+    This function implements the exact strategy used in training and backtesting,
+    ready for production deployment.
+
+    Args:
+        bar: Current market bar with OHLCV and features
+        model_probability: ML model's predicted probability (0-1)
+        config: Trading configuration
+        current_equity: Current account equity
+
+    Returns:
+        Trading signal dict with entry, TP, SL, position size, or None if no signal
+    """
+    # STEP 1: Check if model probability exceeds threshold
+    if model_probability < config.fixed_threshold:
+        return None
+
+    # STEP 2: Get current price and ATR
+    entry_price = bar['close']
+    atr = bar.get('atr_14', bar['high'] - bar['low'])
+
+    # STEP 3: Check quote quality if available
+    if config.enable_quote_filtering:
+        spread_val = bar.get('q_spread_mean', None)
+        if spread_val is not None and pd.notna(spread_val):
+            # Skip if spread too wide (placeholder for actual threshold)
+            if spread_val > config.spread_gold * 2:
+                return None
+
+    # STEP 4: Calculate position size
+    sl_distance = config.sl_atr_multiple * atr
+    risk_amount = current_equity * config.risk_per_trade_pct
+    position_size_lots = risk_amount / (sl_distance * 100.0)
+    position_size_lots = min(position_size_lots, config.max_position_size)
+
+    # STEP 5: Calculate TP and SL levels
+    tp_price = entry_price + (config.tp_atr_multiple * atr)
+    sl_price = entry_price - (config.sl_atr_multiple * atr)
+
+    # STEP 6: Return signal
+    return {
+        'timestamp': bar.get('timestamp'),
+        'signal_type': 'LONG',
+        'entry_price': entry_price,
+        'take_profit': tp_price,
+        'stop_loss': sl_price,
+        'position_size_lots': position_size_lots,
+        'atr': atr,
+        'model_probability': model_probability,
+        'risk_reward_ratio': config.tp_atr_multiple / config.sl_atr_multiple,
+        'max_holding_bars': config.max_holding_bars,
+        'expected_hold_time_minutes': config.max_holding_bars * 15 if config.timeframe == '15T' else None
+    }
 
 
 def main():
