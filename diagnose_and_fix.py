@@ -56,31 +56,38 @@ if 'atr_14' not in test_data.columns:
     true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     test_data['atr_14'] = true_range.rolling(14).mean()
 
+# Fill NaN in features first (common in technical indicators)
+print("\nFilling NaN values in features...")
+for col in test_data.columns:
+    if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume']:
+        test_data[col] = test_data[col].ffill().bfill()
+
+# Features
+feature_cols = [col for col in test_data.columns
+                if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume',
+                              'bid', 'ask', 'spread', 'spread_pct', 'mid', 'atr_14']]
+
+print(f"Features available: {len(feature_cols)}")
+
 # TEST 1: Simple directional labels
 print("\n" + "=" * 80)
 print("TEST 1: Can we predict simple DIRECTION (up/down)?")
 print("=" * 80)
 
-test_data['return_1bar'] = test_data['close'].pct_change(1).shift(-1)
-test_data['direction'] = (test_data['return_1bar'] > 0).astype(int)
+test_data_1 = test_data.copy()
+test_data_1['return_1bar'] = test_data_1['close'].pct_change(1).shift(-1)
+test_data_1['direction'] = (test_data_1['return_1bar'] > 0).astype(int)
 
-# Remove NaN
-test_data = test_data.dropna()
-
-# Features
-feature_cols = [col for col in test_data.columns
-                if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume',
-                              'return_1bar', 'direction', 'bid', 'ask', 'spread', 'spread_pct', 'mid']]
-
-print(f"\nFeatures available: {len(feature_cols)}")
+# Remove rows where we can't calculate the label
+test_data_1 = test_data_1[test_data_1['return_1bar'].notna()].copy()
 
 if len(feature_cols) == 0:
     print("\n❌ NO FEATURES FOUND! Only OHLCV data exists.")
     print("   You need to run calculate_all_features.py first!")
     exit(1)
 
-X = test_data[feature_cols].values
-y = test_data['direction'].values
+X = test_data_1[feature_cols].values
+y = test_data_1['direction'].values
 
 print(f"\nLabel distribution:")
 print(f"  UP (1):   {(y==1).sum()} ({(y==1).mean()*100:.1f}%)")
@@ -187,7 +194,8 @@ def create_tpsl_labels(df, tp_mult=2.0, sl_mult=1.0, max_bars=8):
     return labels
 
 test_data['tpsl_label'] = create_tpsl_labels(test_data)
-test_data = test_data.dropna()
+# Features already filled from TEST 1, just ensure no remaining NaN
+test_data = test_data.fillna(0)
 
 X2 = test_data[feature_cols].values
 y2 = test_data['tpsl_label'].values
