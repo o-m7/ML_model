@@ -1659,9 +1659,13 @@ class WalkForwardValidator:
 # SECTION 8: MAIN EXECUTION PIPELINE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quotes: bool = True) -> pd.DataFrame:
+def load_real_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quotes: bool = True) -> pd.DataFrame:
     """
-    Load data from feature store with calculated features and optional quote data.
+    Load REAL data from feature store parquet files. NO SYNTHETIC DATA ALLOWED.
+
+    This function will ONLY load real parquet files with pre-calculated features.
+    If the parquet file is not found, it will raise a HARD ERROR.
+    NO fallback to synthetic/demo/sample data is permitted.
 
     Args:
         symbol: 'XAUUSD' or 'XAGUSD'
@@ -1670,6 +1674,10 @@ def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quo
 
     Returns:
         DataFrame with OHLCV + features + quotes (if available)
+
+    Raises:
+        FileNotFoundError: If real parquet file does not exist
+        ValueError: If data is invalid or missing required columns
     """
     # Try multiple possible locations for feature_store
     possible_paths = [
@@ -1679,92 +1687,101 @@ def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quo
     ]
 
     feature_store = None
+    data_path = None
+
     for path in possible_paths:
         test_path = path / symbol / f"{symbol}_{timeframe}.parquet"
         if test_path.exists():
             feature_store = path
+            data_path = test_path
             break
 
-    if feature_store is None:
-        feature_store = Path("feature_store")  # Default fallback
+    # HARD ERROR if file not found - NO FALLBACK TO SYNTHETIC DATA
+    if data_path is None or not data_path.exists():
+        attempted_paths = [str(p / symbol / f"{symbol}_{timeframe}.parquet") for p in possible_paths]
+        error_msg = f"""
+╔════════════════════════════════════════════════════════════════════════════════╗
+║ FATAL ERROR: REAL DATA FILE NOT FOUND                                         ║
+╚════════════════════════════════════════════════════════════════════════════════╝
 
-    data_path = feature_store / symbol / f"{symbol}_{timeframe}.parquet"
+Could not load REAL parquet file for {symbol} {timeframe}.
 
-    if data_path.exists():
-        print(f"📂 Loading data from {data_path}")
-        df = pd.read_parquet(data_path)
+Attempted locations:
+{chr(10).join('  - ' + p for p in attempted_paths)}
 
-        # Ensure timestamp column exists
-        if 'timestamp' not in df.columns:
-            if isinstance(df.index, pd.DatetimeIndex):
-                df = df.reset_index()
-                if df.columns[0] != 'timestamp':
-                    df = df.rename(columns={df.columns[0]: 'timestamp'})
-            else:
-                raise ValueError("No timestamp column or DatetimeIndex found in data")
+NO SYNTHETIC OR FALLBACK DATA IS ALLOWED.
 
-        # Convert timestamp to datetime
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
-        df = df.sort_values('timestamp').reset_index(drop=True)
+To fix this issue:
+1. Ensure your feature_store parquet files exist in one of the above locations
+2. Run calculate_all_features.py to generate feature files from raw data
+3. Or download the feature files from your data source
 
-        # Load and merge quote data if requested
-        if include_quotes:
-            quotes_path = feature_store / "quotes" / symbol / f"{symbol}_{timeframe}_quotes.parquet"
+The pipeline will NOT continue with fake/demo/synthetic data.
+"""
+        raise FileNotFoundError(error_msg)
 
-            if quotes_path.exists():
-                print(f"📊 Loading quote data from {quotes_path}")
-                df_quotes = pd.read_parquet(quotes_path)
+    # Load the REAL parquet file
+    print("\n" + "=" * 80)
+    print("[DATA LOADING] Using REAL parquet file (NO synthetic data)")
+    print("=" * 80)
+    print(f"[DATA] File path: {data_path.absolute()}")
+    print(f"[DATA] File size: {data_path.stat().st_size / 1024 / 1024:.2f} MB")
 
-                # Merge on timestamp
-                df = pd.merge(df, df_quotes, on='timestamp', how='left', suffixes=('', '_quote'))
+    df = pd.read_parquet(data_path)
+    print(f"[DATA] Successfully loaded: {len(df):,} rows × {len(df.columns)} columns")
 
-                print(f"   ✓ Merged {len(df_quotes)} quote records")
-                print(f"   ✓ Avg spread: {df['spread'].mean():.4f} ({df['spread_pct'].mean():.4f}%)")
-            else:
-                print(f"   ⚠️  Quote data not found at {quotes_path}")
-
-        # Check if features are already calculated
-        feature_cols = [col for col in df.columns
-                       if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume',
-                                     'bid', 'ask', 'spread', 'spread_pct', 'mid']]
-
-        print(f"   ✓ Loaded {len(df):,} rows with {len(df.columns)} total columns")
-        print(f"   ✓ Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
-        print(f"   ✓ Duration: {(df['timestamp'].max() - df['timestamp'].min()).days} days")
-
-        if len(feature_cols) > 10:
-            print(f"   ✓ Using pre-calculated features ({len(feature_cols)} features)")
+    # Ensure timestamp column exists
+    if 'timestamp' not in df.columns:
+        if isinstance(df.index, pd.DatetimeIndex):
+            df = df.reset_index()
+            if df.columns[0] != 'timestamp':
+                df = df.rename(columns={df.columns[0]: 'timestamp'})
         else:
-            print(f"   ⚠️  Only {len(feature_cols)} features found - need to calculate features")
-            print(f"   💡 Run: python3 calculate_all_features.py")
+            raise ValueError(f"FATAL: No timestamp column or DatetimeIndex found in {data_path}")
 
-        return df
-    else:
-        print(f"⚠️  Data not found at {data_path}")
-        print(f"📊 Generating synthetic sample data for demonstration...")
+    # Convert timestamp to datetime
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values('timestamp').reset_index(drop=True)
 
-        # Generate synthetic data for demonstration
-        np.random.seed(42)
-        n_samples = 10000
+    # Load and merge quote data if requested
+    if include_quotes:
+        quotes_path = feature_store / "quotes" / symbol / f"{symbol}_{timeframe}_quotes.parquet"
 
-        dates = pd.date_range(start='2023-01-01', periods=n_samples, freq=timeframe)
+        if quotes_path.exists():
+            print(f"[DATA] Loading quote data from: {quotes_path.absolute()}")
+            df_quotes = pd.read_parquet(quotes_path)
 
-        # Generate realistic gold price movement
-        base_price = 1900
-        returns = np.random.normal(0.0001, 0.01, n_samples)
-        prices = base_price * np.exp(np.cumsum(returns))
+            # Merge on timestamp
+            df = pd.merge(df, df_quotes, on='timestamp', how='left', suffixes=('', '_quote'))
 
-        df = pd.DataFrame({
-            'timestamp': dates,
-            'open': prices + np.random.normal(0, 0.5, n_samples),
-            'high': prices + np.abs(np.random.normal(1, 0.5, n_samples)),
-            'low': prices - np.abs(np.random.normal(1, 0.5, n_samples)),
-            'close': prices,
-            'volume': np.random.randint(1000, 10000, n_samples)
-        })
+            print(f"[DATA] ✓ Merged {len(df_quotes):,} quote records")
+            if 'spread' in df.columns:
+                print(f"[DATA] ✓ Avg spread: {df['spread'].mean():.4f} ({df['spread_pct'].mean():.4f}%)")
+        else:
+            print(f"[DATA] ⚠️  Quote data not found at {quotes_path} (continuing without quotes)")
 
-        print(f"   Generated {len(df)} synthetic bars")
-        return df
+    # Check features
+    feature_cols = [col for col in df.columns
+                   if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume',
+                                 'bid', 'ask', 'spread', 'spread_pct', 'mid']]
+
+    print(f"\n[DATA] Dataset summary:")
+    print(f"  • Total rows: {len(df):,}")
+    print(f"  • Total columns: {len(df.columns)}")
+    print(f"  • Feature columns: {len(feature_cols)}")
+    print(f"  • Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+    print(f"  • Duration: {(df['timestamp'].max() - df['timestamp'].min()).days} days")
+    print(f"\n[DATA] First 3 rows of loaded data:")
+    print(df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].head(3))
+
+    if len(feature_cols) < 10:
+        raise ValueError(f"FATAL: Only {len(feature_cols)} feature columns found. Expected at least 10. "
+                        f"Run calculate_all_features.py to generate features.")
+
+    print(f"[DATA] ✓ Using {len(feature_cols)} pre-calculated features from REAL parquet file")
+    print("=" * 80 + "\n")
+
+    return df
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1850,9 +1867,10 @@ def main():
     print(f"   Min viable PF: {config.min_profit_factor}")
     print(f"   Min viable Sharpe: {config.min_sharpe_ratio}")
 
-    # Load data
-    df_gold = load_sample_data("XAUUSD", config.timeframe)
-    df_silver = load_sample_data("XAGUSD", config.timeframe) if False else None  # Optional
+    # Load REAL data from feature_store parquet files
+    # This will FAIL HARD if parquet files don't exist (no synthetic fallback)
+    df_gold = load_real_data("XAUUSD", config.timeframe)
+    df_silver = load_real_data("XAGUSD", config.timeframe) if False else None  # Optional
 
     # Run walk-forward validation
     validator = WalkForwardValidator(config)
