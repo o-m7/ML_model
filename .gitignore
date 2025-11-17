@@ -39,9 +39,9 @@ models_production/*.pkl
 models_production/*.joblib
 models_onnx/*.onnx
 
-# Feature store (can be regenerated, but allow committing for now)
-# feature_store/
-# *.parquet
+# Feature store (can be regenerated)
+feature_store/
+*.parquet
 
 # Results directories (can be regenerated)
 institutional_ml_results/
