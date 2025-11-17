@@ -100,16 +100,16 @@ class TradingConfig:
 
     # Label creation parameters (TP/SL-based)
     max_holding_bars: int = 8  # Maximum bars to hold trade (5T: 40min, 15T: 120min)
-    tp_atr_multiple: float = 1.5  # Take profit = entry ± (1.5 × ATR)
+    tp_atr_multiple: float = 2.0  # Take profit = entry ± (2.0 × ATR) - wider for more trades
     sl_atr_multiple: float = 1.0  # Stop loss = entry ± (1.0 × ATR)
-    min_r_multiple: float = 0.5  # Minimum R multiple to consider trade valid
+    min_r_multiple: float = 0.3  # Minimum R multiple to consider trade valid (lowered from 0.5)
     use_tpsl_labels: bool = True  # Use TP/SL-based labels vs simple forward return
 
     # Threshold optimization
     use_fixed_threshold: bool = True  # Use fixed threshold instead of quantile
-    fixed_threshold: float = 0.55  # Trade when model predicts >55% probability
+    fixed_threshold: float = 0.50  # Trade when model predicts >50% probability (lowered from 0.55)
     signal_quantile: float = 0.70  # Fallback: Top 30% of signals if using quantile method
-    min_trades_per_segment: int = 10  # Reduced from 20
+    min_trades_per_segment: int = 5  # Minimum viable trades per segment (lowered from 10)
 
     # Quote-based filtering (disabled by default - set to False to skip filtering)
     enable_quote_filtering: bool = False  # Enable/disable quote-based filters
@@ -1728,7 +1728,8 @@ def main():
 
     # Run walk-forward validation
     validator = WalkForwardValidator(config)
-    results = validator.validate(df_gold, df_silver)
+    # Use smaller time windows: 2 months train, 1 month test (works with limited data)
+    results = validator.validate(df_gold, df_silver, train_months=2, test_months=1)
     validator.print_summary()
 
     # Save results
