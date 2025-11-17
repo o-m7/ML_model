@@ -69,9 +69,12 @@ Added 80+ features including:
 git pull origin claude/fix-trading-model-performance-01HMR2zbUJUWu8GAmRhbf3vK
 ```
 
-### Step 2: Train a single timeframe (quick test)
+### Step 2: Train a single timeframe (quick test) - LOCAL DATA
 ```bash
-# Test with 15T first
+# RECOMMENDED: Use local data (faster, no API calls)
+python train_all_timeframes_local.py
+
+# Alternative: Fetch fresh data from Polygon API
 python train_xauusd_15t_now.py
 ```
 
@@ -87,17 +90,25 @@ Label Distribution:
 
 ### Step 3: Train ALL timeframes
 ```bash
-# Train 5T, 15T, 30T, 1H, 4H
+# RECOMMENDED: Use local data from feature_store/ (NO API CALLS)
+python train_all_timeframes_local.py
+
+# Alternative: Fetch fresh data from Polygon API
 python train_all_timeframes_fixed.py
 ```
 
-This will:
-- Fetch 2 years of data from Polygon
-- Calculate comprehensive features
-- Create balanced labels
-- Train models for all timeframes
-- Validate signal generation
-- Save to `models_institutional/XAUUSD/`
+**RECOMMENDED: train_all_timeframes_local.py** because it:
+- Uses existing local data (faster, no API rate limits)
+- Recalculates features for consistency
+- Creates balanced labels
+- Trains models for all available timeframes
+- Validates signal generation
+- Saves to `models_institutional/XAUUSD/`
+
+**train_all_timeframes_fixed.py** fetches fresh data from Polygon:
+- Fetches 2 years of data from Polygon API
+- May hit API rate limits
+- Requires POLYGON_API_KEY to be set
 
 ### Step 4: Backtest the models
 ```bash
@@ -146,11 +157,17 @@ git push origin claude/fix-trading-model-performance-01HMR2zbUJUWu8GAmRhbf3vK
 | Long Signals | 0 | ~50% of signals |
 | Short Signals | 686 | ~50% of signals |
 
-## Files Modified
+## Files Created/Modified
 
+### New Files
+1. **train_all_timeframes_local.py** - ⭐ RECOMMENDED: Multi-timeframe training using LOCAL data
+2. **train_all_timeframes_fixed.py** - Multi-timeframe training with Polygon API
+3. **institutional_ml_trading_system.py** - Enterprise-grade training for all symbols
+4. **validate_all_models.py** - Comprehensive model validation
+5. **TRAINING_FIX_README.md** - This documentation
+
+### Modified Files
 1. **train_xauusd_15t_now.py** - Fixed labeling and training for 15T
-2. **train_all_timeframes_fixed.py** - NEW: Comprehensive multi-timeframe training
-3. **TRAINING_FIX_README.md** - This file
 
 ## Troubleshooting
 
