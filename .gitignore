@@ -43,6 +43,15 @@ models_onnx/*.onnx
 feature_store/
 *.parquet
 
+# Results directories (can be regenerated)
+institutional_ml_results/
+ensemble_results/
+walk_forward_results/
+backtest_results/*.csv
+stress_test_results/
+evaluation/
+reports/
+
 # Logs
 *.log
 logs/
