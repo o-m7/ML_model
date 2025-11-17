@@ -25,10 +25,17 @@ def load_raw_data(symbol: str, timeframe: str) -> pd.DataFrame:
 
     df = pd.read_parquet(file_path)
 
+    # Handle timestamp in index or column
+    if 'timestamp' not in df.columns and isinstance(df.index, pd.DatetimeIndex):
+        df = df.reset_index()
+        if df.columns[0] != 'timestamp':
+            df = df.rename(columns={df.columns[0]: 'timestamp'})
+
     print(f"\n📊 Loaded {symbol} {timeframe}")
     print(f"   Rows: {len(df):,}")
     print(f"   Columns: {list(df.columns)}")
-    print(f"   Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+    if 'timestamp' in df.columns:
+        print(f"   Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
 
     return df
 
