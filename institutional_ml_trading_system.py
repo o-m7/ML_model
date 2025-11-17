@@ -680,9 +680,10 @@ class EnsembleModelTrainer:
             is_training: If True, fit imputer and store feature columns. If False, use stored values.
         """
         if is_training:
-            # Identify feature columns (exclude price, target, metadata)
+            # Identify feature columns (exclude price, target, metadata, and label diagnostics)
             exclude_cols = ['open', 'high', 'low', 'close', 'volume', 'timestamp',
-                           'target', 'forward_return_long', 'forward_return_short', 'total_cost_pct']
+                           'target', 'forward_return_long', 'forward_return_short', 'total_cost_pct',
+                           'long_r', 'short_r', 'holding_bars']  # TP/SL label diagnostic columns
 
             feature_cols = [col for col in df.columns if col not in exclude_cols and not col.endswith('_XAGUSD')]
             self.feature_columns = feature_cols
