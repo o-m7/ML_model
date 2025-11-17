@@ -128,8 +128,8 @@ class TradingConfig:
 
     # Risk management
     initial_capital: float = 25000.0  # Starting capital
-    max_position_size: float = 0.5  # Max lots/units (reduced from 1.0 for safety)
-    risk_per_trade_pct: float = 0.005  # 0.5% risk per trade (reduced from 1% for safety)
+    max_position_size: float = 1.0  # Max lots/units
+    risk_per_trade_pct: float = 0.01  # 1% risk per trade ($250 per trade on $25k)
     max_daily_drawdown_pct: float = 0.05  # 5% max daily DD
 
     # Label creation parameters (TP/SL-based)
@@ -140,10 +140,10 @@ class TradingConfig:
     use_tpsl_labels: bool = True  # Use TP/SL-based labels vs simple forward return
 
     # Threshold optimization
-    use_fixed_threshold: bool = True  # Use fixed threshold instead of quantile
-    fixed_threshold: float = 0.65  # Trade when model predicts >65% probability (increased for selectivity)
-    signal_quantile: float = 0.80  # Fallback: Top 20% of signals if using quantile method
-    min_trades_per_segment: int = 5  # Minimum viable trades per segment
+    use_fixed_threshold: bool = False  # Use quantile method for adaptive thresholding
+    fixed_threshold: float = 0.52  # Fallback: Trade when model predicts >52% probability
+    signal_quantile: float = 0.70  # Take top 30% of signals (more trades)
+    min_trades_per_segment: int = 20  # Minimum viable trades per segment
 
     # Quote-based filtering (disabled by default - set to False to skip filtering)
     enable_quote_filtering: bool = False  # Enable/disable quote-based filters
@@ -1874,8 +1874,8 @@ def main():
 
     # Run walk-forward validation
     validator = WalkForwardValidator(config)
-    # Use 6 months train, 3 months test for robust validation
-    results = validator.validate(df_gold, df_silver, train_months=6, test_months=3)
+    # Use 3 months train, 1 month test for more frequent retraining
+    results = validator.validate(df_gold, df_silver, train_months=3, test_months=1)
     validator.print_summary()
 
     # Save results
