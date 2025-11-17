@@ -1464,16 +1464,23 @@ class WalkForwardValidator:
         print(f"\n✓ Created {len(segments)} segments")
         return segments
 
-    def validate(self, df: pd.DataFrame, df_secondary: Optional[pd.DataFrame] = None) -> List[Dict]:
+    def validate(self, df: pd.DataFrame, df_secondary: Optional[pd.DataFrame] = None,
+                 train_months: int = 6, test_months: int = 1) -> List[Dict]:
         """
         Run walk-forward validation.
+
+        Args:
+            df: Primary dataframe with OHLCV + features
+            df_secondary: Optional secondary asset dataframe
+            train_months: Initial training period in months
+            test_months: Test period length in months
         """
         print("\n" + "=" * 80)
         print("WALK-FORWARD VALIDATION")
         print("=" * 80)
 
         # Create segments
-        segments = self.create_segments(df)
+        segments = self.create_segments(df, train_months=train_months, test_months=test_months)
 
         all_results = []
 
