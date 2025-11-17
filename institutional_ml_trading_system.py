@@ -1735,8 +1735,8 @@ def main():
 
     # Run walk-forward validation
     validator = WalkForwardValidator(config)
-    # Use smaller time windows: 2 months train, 1 month test (works with limited data)
-    results = validator.validate(df_gold, df_silver, train_months=2, test_months=1)
+    # Use 6 months train, 3 months test for robust validation
+    results = validator.validate(df_gold, df_silver, train_months=6, test_months=3)
     validator.print_summary()
 
     # Save results
