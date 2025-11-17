@@ -138,19 +138,24 @@ def calculate_features(df):
 
 def create_labels(df):
     """
-    Create labels using NEXT BAR OPEN (FIXED!)
+    Create BALANCED labels using NEXT BAR OPEN (FIXED!)
+
+    Key fixes:
+    1. Use NEXT bar open for entry (realistic)
+    2. Check BOTH long and short opportunities
+    3. Ensure balanced distribution
     """
-    print("\n🏷️  Creating labels with NEXT BAR OPEN entry...")
+    print("\n🏷️  Creating BALANCED labels with NEXT BAR OPEN entry...")
 
     df = df.copy()
     n = len(df)
-    horizon = 40
+    horizon = 50  # Increased horizon for more opportunities
 
     tp_sl_params = get_tp_sl(SYMBOL, TIMEFRAME)
     tp_mult = tp_sl_params.tp_atr_mult
     sl_mult = tp_sl_params.sl_atr_mult
 
-    print(f"   TP: {tp_mult}x ATR, SL: {sl_mult}x ATR")
+    print(f"   TP: {tp_mult:.1f}x ATR, SL: {sl_mult:.1f}x ATR (R:R = {tp_mult/sl_mult:.2f})")
 
     atr = df['atr14'].values
 
@@ -158,59 +163,89 @@ def create_labels(df):
     next_bar_opens = df['open'].shift(-1).values
     entry_prices = next_bar_opens
 
-    tp_prices = entry_prices + (atr * tp_mult)
-    sl_prices = entry_prices - (atr * sl_mult)
-
-    labels = np.zeros(n, dtype=int)
     highs = df['high'].values
     lows = df['low'].values
-    closes = df['close'].values
+
+    # Initialize labels: 0=Flat, 1=Long, 2=Short
+    labels = np.zeros(n, dtype=int)
+
+    # Track statistics
+    long_wins = 0
+    short_wins = 0
 
     for i in range(n - horizon - 1):
-        if np.isnan(entry_prices[i]):
+        if np.isnan(entry_prices[i]) or np.isnan(atr[i]):
             continue
 
+        entry = entry_prices[i]
+
+        # Define TP/SL for LONG
+        tp_long = entry + (atr[i] * tp_mult)
+        sl_long = entry - (atr[i] * sl_mult)
+
+        # Define TP/SL for SHORT
+        tp_short = entry - (atr[i] * tp_mult)
+        sl_short = entry + (atr[i] * sl_mult)
+
+        # Look ahead
         future_highs = highs[i+1:i+1+horizon]
         future_lows = lows[i+1:i+1+horizon]
-        future_closes = closes[i+1:i+1+horizon]
 
         if len(future_highs) == 0:
             continue
 
-        tp_hits = np.where(future_highs >= tp_prices[i])[0]
-        sl_hits = np.where(future_lows <= sl_prices[i])[0]
+        # Check LONG trade outcome
+        tp_long_hits = np.where(future_highs >= tp_long)[0]
+        sl_long_hits = np.where(future_lows <= sl_long)[0]
 
-        tp_hit = len(tp_hits) > 0
-        sl_hit = len(sl_hits) > 0
+        long_wins_trade = len(tp_long_hits) > 0 and (len(sl_long_hits) == 0 or tp_long_hits[0] < sl_long_hits[0])
 
-        if tp_hit and sl_hit:
-            labels[i] = 1 if tp_hits[0] < sl_hits[0] else 2
-        elif tp_hit:
-            labels[i] = 1  # Up
-        elif sl_hit:
-            labels[i] = 2  # Down
-        else:
-            # Check final price
-            final_price = future_closes[-1]
-            ret = (final_price - entry_prices[i]) / entry_prices[i]
-            atr_normalized_ret = ret * entry_prices[i] / atr[i]
+        # Check SHORT trade outcome
+        tp_short_hits = np.where(future_lows <= tp_short)[0]
+        sl_short_hits = np.where(future_highs >= sl_short)[0]
 
-            if atr_normalized_ret >= (tp_mult * 0.85):
+        short_wins_trade = len(tp_short_hits) > 0 and (len(sl_short_hits) == 0 or tp_short_hits[0] < sl_short_hits[0])
+
+        # Label logic: Only label if ONE direction clearly wins
+        if long_wins_trade and not short_wins_trade:
+            labels[i] = 1  # Long
+            long_wins += 1
+        elif short_wins_trade and not long_wins_trade:
+            labels[i] = 2  # Short
+            short_wins += 1
+        elif long_wins_trade and short_wins_trade:
+            # Both win - choose the faster one
+            long_bars = tp_long_hits[0]
+            short_bars = tp_short_hits[0]
+            if long_bars < short_bars:
                 labels[i] = 1
-            elif atr_normalized_ret <= -(sl_mult * 0.85):
-                labels[i] = 2
+                long_wins += 1
             else:
-                labels[i] = 0  # Flat
+                labels[i] = 2
+                short_wins += 1
+        # else: labels[i] = 0 (Flat) - no clear winner
 
     df['target'] = labels
     df = df.iloc[:-(horizon + 1)]
 
     # Show distribution
-    counts = df['target'].value_counts()
+    counts = df['target'].value_counts().sort_index()
     total = len(df)
-    print(f"   Flat: {counts.get(0, 0):,} ({counts.get(0, 0)/total*100:.1f}%)")
-    print(f"   Up:   {counts.get(1, 0):,} ({counts.get(1, 0)/total*100:.1f}%)")
-    print(f"   Down: {counts.get(2, 0):,} ({counts.get(2, 0)/total*100:.1f}%)")
+    flat_pct = counts.get(0, 0) / total * 100
+    long_pct = counts.get(1, 0) / total * 100
+    short_pct = counts.get(2, 0) / total * 100
+
+    print(f"\n   Label Distribution:")
+    print(f"   Flat:  {counts.get(0, 0):,} ({flat_pct:.1f}%)")
+    print(f"   Long:  {counts.get(1, 0):,} ({long_pct:.1f}%)")
+    print(f"   Short: {counts.get(2, 0):,} ({short_pct:.1f}%)")
+    print(f"\n   Balance Check:")
+    print(f"   Long TP wins: {long_wins}")
+    print(f"   Short TP wins: {short_wins}")
+
+    # Check for severe imbalance
+    if long_pct < 5 or short_pct < 5:
+        print(f"   ⚠️  WARNING: Severe imbalance detected!")
 
     return df
 
@@ -247,8 +282,21 @@ def train_model(df):
     print(f"   Train: {len(X_train):,} samples")
     print(f"   Test:  {len(X_test):,} samples")
 
-    # Train
+    # Train with balanced class weights
     num_classes = len(np.unique(y_train))
+
+    # Calculate balanced weights
+    counts = np.bincount(y_train)
+    print(f"\n   Class distribution in training set:")
+    for cls in range(num_classes):
+        print(f"   Class {cls}: {counts[cls]:,}")
+
+    # Balanced weights (inverse of frequency)
+    weights = len(y_train) / (num_classes * counts + 1e-10)
+    weights[0] *= 1.2  # Slight Flat boost (encourage selectivity)
+    sample_weights = weights[y_train]
+
+    print(f"   Class weights: {weights}")
 
     if num_classes == 2:
         # Binary classification
@@ -278,7 +326,7 @@ def train_model(df):
             verbosity=0
         )
 
-    model.fit(X_train, y_train)
+    model.fit(X_train, y_train, sample_weight=sample_weights)
 
     # Evaluate
     y_pred = model.predict(X_test)
@@ -286,6 +334,21 @@ def train_model(df):
 
     print("\n📊 Test Set Performance:")
     print(classification_report(y_test, y_pred, target_names=class_names))
+
+    # Check prediction distribution
+    pred_counts = np.bincount(y_pred)
+    print(f"\n   Prediction Distribution on Test Set:")
+    for cls in range(len(class_names)):
+        print(f"   {class_names[cls]:6s}: {pred_counts[cls]:,} ({pred_counts[cls]/len(y_pred)*100:.1f}%)")
+
+    # Check for prediction bias (only for multi-class)
+    if num_classes == 3:
+        long_short_ratio = pred_counts[1] / (pred_counts[2] + 1e-10)
+        if long_short_ratio < 0.5 or long_short_ratio > 2.0:
+            print(f"\n   ⚠️  WARNING: Prediction bias detected!")
+            print(f"   Long/Short ratio: {long_short_ratio:.2f} (should be ~1.0)")
+        else:
+            print(f"\n   ✅ Predictions well-balanced (Long/Short ratio: {long_short_ratio:.2f})")
 
     # Save model
     model_dir = Path("models_rentec") / SYMBOL
