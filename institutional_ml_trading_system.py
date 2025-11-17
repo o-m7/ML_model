@@ -451,8 +451,13 @@ class LabelEngineer:
 
         # Ensure we have ATR
         if 'atr_14' not in df.columns:
-            print(f"   ⚠️  ATR not found, calculating...")
-            df['atr_14'] = df['high'].rolling(14).max() - df['low'].rolling(14).min()
+            print(f"   ⚠️  ATR not found, calculating properly...")
+            # Calculate True Range: max(high-low, |high-prev_close|, |low-prev_close|)
+            high_low = df['high'] - df['low']
+            high_close = np.abs(df['high'] - df['close'].shift())
+            low_close = np.abs(df['low'] - df['close'].shift())
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            df['atr_14'] = true_range.rolling(14).mean()
 
         n = len(df)
         max_hold = config.max_holding_bars
@@ -1114,7 +1119,7 @@ class RealisticBacktester:
         self.equity_curve = []
 
     def backtest(self, df: pd.DataFrame, signals: np.ndarray,
-                threshold: float) -> PerformanceMetrics:
+                threshold: float, starting_equity: float = None) -> PerformanceMetrics:
         """
         Run backtest on historical data with signals.
 
@@ -1122,6 +1127,7 @@ class RealisticBacktester:
             df: DataFrame with price data
             signals: Predicted probabilities
             threshold: Signal threshold for trading
+            starting_equity: Starting equity for this segment (for cumulative WFV)
         """
         print(f"\n📈 Running backtest...")
         print(f"   Total bars: {len(df):,}")
@@ -1160,7 +1166,9 @@ class RealisticBacktester:
                 print(f"   Quote-based filtering DISABLED (quote features not available)")
 
         trades = []
-        equity = self.config.initial_capital  # Starting capital from config
+        # Use provided starting equity or default to initial capital
+        equity = starting_equity if starting_equity is not None else self.config.initial_capital
+        self.starting_equity = equity  # Store for reporting
         equity_curve = [equity]
         peak_equity = equity
         max_dd = 0
@@ -1311,21 +1319,27 @@ class RealisticBacktester:
             largest_win = winning_trades['pnl'].max() if num_wins > 0 else 0
             largest_loss = losing_trades['pnl'].min() if num_losses > 0 else 0
 
-            # Calculate Sharpe ratio
-            returns = trades_df['pnl'].values
-            if len(returns) > 1 and returns.std() > 0:
-                sharpe = (returns.mean() / returns.std()) * np.sqrt(252)  # Annualized
+            # Calculate Sharpe ratio using RETURN PERCENTAGES (not dollar PnL)
+            # Reconstruct equity at start of each trade
+            cumulative_pnl = trades_df['pnl'].cumsum()
+            starting_equities = [self.starting_equity] + list(self.starting_equity + cumulative_pnl.iloc[:-1].values)
+            return_pcts = trades_df['pnl'].values / np.array(starting_equities)
+
+            if len(return_pcts) > 1 and return_pcts.std() > 0:
+                # Per-trade Sharpe (no time-based annualization for intraday)
+                sharpe = return_pcts.mean() / return_pcts.std()
             else:
                 sharpe = 0
 
-            # Sortino ratio (downside deviation)
-            downside_returns = returns[returns < 0]
+            # Sortino ratio (using return percentages)
+            downside_returns = return_pcts[return_pcts < 0]
             if len(downside_returns) > 1 and downside_returns.std() > 0:
-                sortino = (returns.mean() / downside_returns.std()) * np.sqrt(252)
+                sortino = return_pcts.mean() / downside_returns.std()
             else:
                 sortino = 0
 
-            total_return_pct = (equity - self.config.initial_capital) / self.config.initial_capital
+            # Total return based on starting equity for this segment
+            total_return_pct = (equity - self.starting_equity) / self.starting_equity
 
             metrics = PerformanceMetrics(
                 total_trades=total_trades,
@@ -1338,7 +1352,7 @@ class RealisticBacktester:
                 profit_factor=profit_factor,
                 sharpe_ratio=sharpe,
                 sortino_ratio=sortino,
-                max_drawdown=max_dd * 10000,
+                max_drawdown=max_dd,  # Store as decimal (removed erroneous *10000)
                 max_drawdown_pct=max_dd,
                 avg_win=avg_win,
                 avg_loss=avg_loss,
@@ -1353,6 +1367,7 @@ class RealisticBacktester:
 
         self.trades = trades
         self.equity_curve = equity_curve
+        self.final_equity = equity  # Store final equity for cumulative tracking
 
         return metrics
 
@@ -1401,6 +1416,8 @@ class WalkForwardValidator:
     def __init__(self, config: TradingConfig):
         self.config = config
         self.results = []
+        self.cumulative_equity = config.initial_capital  # Track equity across all segments
+        self.all_trades = []  # Accumulate all trades for cumulative analysis
 
     def create_segments(self, df: pd.DataFrame,
                        train_months: int = 6,
@@ -1485,9 +1502,9 @@ class WalkForwardValidator:
                         test_df, df_secondary, self.config.symbol, "XAGUSD"
                     )
 
-            # Label engineering
+            # Label engineering (only needed for training data)
             train_df = LabelEngineer.create_profit_labels(train_df, self.config)
-            test_df = LabelEngineer.create_profit_labels(test_df, self.config)
+            # Note: test_df doesn't need labels - backtest uses predictions only
 
             # Balance training labels
             train_df = LabelEngineer.balance_labels(train_df, method='undersample')
@@ -1510,10 +1527,18 @@ class WalkForwardValidator:
                 val_predictions, val_split['target'].values, self.config, method='quantile'
             )
 
-            # Backtest on test set
+            # Backtest on test set with cumulative equity
             backtester = RealisticBacktester(self.config)
-            metrics = backtester.backtest(test_df, test_predictions, threshold)
+            metrics = backtester.backtest(test_df, test_predictions, threshold,
+                                         starting_equity=self.cumulative_equity)
             backtester.print_metrics(metrics)
+
+            # Update cumulative equity and trades
+            self.cumulative_equity = backtester.final_equity
+            self.all_trades.extend(backtester.trades)
+
+            print(f"\n   💰 Segment equity: ${backtester.starting_equity:,.2f} → ${backtester.final_equity:,.2f}")
+            print(f"   📊 Cumulative equity: ${self.cumulative_equity:,.2f}")
 
             # Store results
             result = {
