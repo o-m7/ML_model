@@ -129,21 +129,25 @@ class TradingConfig:
     # Risk management
     initial_capital: float = 25000.0  # Starting capital
     max_position_size: float = 1.0  # Max lots/units
-    risk_per_trade_pct: float = 0.01  # 1% risk per trade ($250 per trade on $25k)
+    risk_per_trade_pct: float = 0.015  # 1.5% risk per trade ($375 per trade on $25k)
     max_daily_drawdown_pct: float = 0.05  # 5% max daily DD
 
     # Label creation parameters (TP/SL-based)
     max_holding_bars: int = 8  # Maximum bars to hold trade (5T: 40min, 15T: 120min)
-    tp_atr_multiple: float = 2.5  # Take profit = entry ± (2.5 × ATR) - wider TP for better R:R
+    tp_atr_multiple: float = 2.0  # Take profit = entry ± (2.0 × ATR) - matches diagnostic
     sl_atr_multiple: float = 1.0  # Stop loss = entry ± (1.0 × ATR)
-    min_r_multiple: float = 0.5  # Minimum R multiple to consider trade valid
+    min_r_multiple: float = 0.3  # Minimum R multiple to consider trade valid (was 0.5)
     use_tpsl_labels: bool = True  # Use TP/SL-based labels vs simple forward return
 
     # Threshold optimization
     use_fixed_threshold: bool = False  # Use quantile method for adaptive thresholding
     fixed_threshold: float = 0.52  # Fallback: Trade when model predicts >52% probability
-    signal_quantile: float = 0.70  # Take top 30% of signals (more trades)
+    signal_quantile: float = 0.60  # Take top 40% of signals (diagnostic proved edge exists)
     min_trades_per_segment: int = 20  # Minimum viable trades per segment
+
+    # Feature selection (use top features from diagnostic)
+    use_top_features_only: bool = True  # Use only the top 20 features identified by diagnostic
+    top_features: list = None  # Will be set to top 20 features
 
     # Quote-based filtering (disabled by default - set to False to skip filtering)
     enable_quote_filtering: bool = False  # Enable/disable quote-based filters
@@ -163,6 +167,33 @@ class TradingConfig:
             return self.spread_silver
         else:
             return 0.10  # Default
+
+    def __post_init__(self):
+        """Initialize top features list from diagnostic results."""
+        if self.top_features is None:
+            # Top 20 features identified by diagnose_and_fix.py (AUC 0.6678 for TP/SL)
+            self.top_features = [
+                'roc_3',
+                'price_vs_vwma_10',
+                'stoch_k',
+                'macd',
+                'correlation_20',
+                'macd_signal',
+                'price_vs_vwma_50',
+                'price_vs_vwma_20',
+                'roc_10',
+                'vwma_20',
+                'bb_width_20',
+                'distance_from_ma_100',
+                'zscore_100',
+                'bb_width_50',
+                'volume_ratio_20',
+                'bb_position_20',
+                'mfi',
+                'volume_ratio_10',
+                'price_ratio',
+                'vwap'
+            ]
 
 
 @dataclass
@@ -719,7 +750,17 @@ class EnsembleModelTrainer:
                            'target', 'forward_return_long', 'forward_return_short', 'total_cost_pct',
                            'long_r', 'short_r', 'holding_bars']  # TP/SL label diagnostic columns
 
-            feature_cols = [col for col in df.columns if col not in exclude_cols and not col.endswith('_XAGUSD')]
+            if self.config.use_top_features_only:
+                # Use only the top 20 features identified by diagnostic (AUC 0.6678)
+                available_cols = set(df.columns)
+                feature_cols = [f for f in self.config.top_features if f in available_cols]
+                print(f"   [FEATURE SELECTION] Using top {len(feature_cols)} features from diagnostic")
+                print(f"   Top 5: {', '.join(feature_cols[:5])}")
+            else:
+                # Use all available features
+                feature_cols = [col for col in df.columns if col not in exclude_cols and not col.endswith('_XAGUSD')]
+                print(f"   [FEATURE SELECTION] Using all {len(feature_cols)} available features")
+
             self.feature_columns = feature_cols
         else:
             # Use stored feature columns from training
@@ -1874,8 +1915,8 @@ def main():
 
     # Run walk-forward validation
     validator = WalkForwardValidator(config)
-    # Use 3 months train, 1 month test for more frequent retraining
-    results = validator.validate(df_gold, df_silver, train_months=3, test_months=1)
+    # Use 6 months train, 3 months test for robust validation
+    results = validator.validate(df_gold, df_silver, train_months=6, test_months=3)
     validator.print_summary()
 
     # Save results
