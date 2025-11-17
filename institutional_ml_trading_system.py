@@ -1169,12 +1169,21 @@ class RealisticBacktester:
         trades = []
         # Use provided starting equity or default to initial capital
         equity = starting_equity if starting_equity is not None else self.config.initial_capital
+
+        # Safety check: ensure we have valid starting equity
+        if equity <= 0:
+            print(f"\n   ⚠️  WARNING: Invalid starting equity: ${equity:.2f}")
+            print(f"   Using default initial_capital: ${self.config.initial_capital:.2f}")
+            equity = self.config.initial_capital
+
         self.starting_equity = equity  # Store for reporting
         equity_curve = [equity]
         peak_equity = equity
         max_dd = 0
         filtered_by_spread = 0
         filtered_by_liquidity = 0
+
+        print(f"\n   💵 Starting equity for this segment: ${equity:,.2f}")
 
         i = 0
         while i < len(df) - 1:
@@ -1417,8 +1426,12 @@ class WalkForwardValidator:
     def __init__(self, config: TradingConfig):
         self.config = config
         self.results = []
+        # Ensure we have a valid initial capital
+        if config.initial_capital <= 0:
+            raise ValueError(f"Invalid initial_capital: {config.initial_capital}. Must be > 0")
         self.cumulative_equity = config.initial_capital  # Track equity across all segments
         self.all_trades = []  # Accumulate all trades for cumulative analysis
+        print(f"\n💰 Walk-Forward Validator initialized with ${self.cumulative_equity:,.2f} starting capital")
 
     def create_segments(self, df: pd.DataFrame,
                        train_months: int = 6,
@@ -1723,6 +1736,8 @@ def main():
     print(f"\n⚙️  Configuration:")
     print(f"   Symbol: {config.symbol}")
     print(f"   Timeframe: {config.timeframe}")
+    print(f"   Initial Capital: ${config.initial_capital:,.2f}")
+    print(f"   Risk per trade: {config.risk_per_trade_pct * 100}%")
     print(f"   Max holding: {config.max_holding_bars} bars")
     print(f"   TP/SL multiples: {config.tp_atr_multiple}R / {config.sl_atr_multiple}R")
     print(f"   Fixed threshold: {config.fixed_threshold}")
