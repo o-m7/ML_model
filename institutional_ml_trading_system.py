@@ -1608,16 +1608,41 @@ def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quo
     Returns:
         DataFrame with OHLCV + features + quotes (if available)
     """
-    feature_store = Path("feature_store")
+    # Try multiple possible locations for feature_store
+    possible_paths = [
+        Path("feature_store"),  # Relative to current directory
+        Path(__file__).parent / "feature_store",  # Relative to script location
+        Path.home() / "Desktop" / "ML_model" / "ML_model" / "feature_store",  # User's desktop location
+    ]
+
+    feature_store = None
+    for path in possible_paths:
+        test_path = path / symbol / f"{symbol}_{timeframe}.parquet"
+        if test_path.exists():
+            feature_store = path
+            break
+
+    if feature_store is None:
+        feature_store = Path("feature_store")  # Default fallback
+
     data_path = feature_store / symbol / f"{symbol}_{timeframe}.parquet"
 
     if data_path.exists():
         print(f"📂 Loading data from {data_path}")
         df = pd.read_parquet(data_path)
 
-        if 'timestamp' not in df.columns and isinstance(df.index, pd.DatetimeIndex):
-            df = df.reset_index()
-            df.columns = ['timestamp'] + list(df.columns[1:])
+        # Ensure timestamp column exists
+        if 'timestamp' not in df.columns:
+            if isinstance(df.index, pd.DatetimeIndex):
+                df = df.reset_index()
+                if df.columns[0] != 'timestamp':
+                    df = df.rename(columns={df.columns[0]: 'timestamp'})
+            else:
+                raise ValueError("No timestamp column or DatetimeIndex found in data")
+
+        # Convert timestamp to datetime
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        df = df.sort_values('timestamp').reset_index(drop=True)
 
         # Load and merge quote data if requested
         if include_quotes:
@@ -1640,10 +1665,15 @@ def load_sample_data(symbol: str = "XAUUSD", timeframe: str = "15T", include_quo
                        if col not in ['timestamp', 'open', 'high', 'low', 'close', 'volume',
                                      'bid', 'ask', 'spread', 'spread_pct', 'mid']]
 
+        print(f"   ✓ Loaded {len(df):,} rows with {len(df.columns)} total columns")
+        print(f"   ✓ Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+        print(f"   ✓ Duration: {(df['timestamp'].max() - df['timestamp'].min()).days} days")
+
         if len(feature_cols) > 10:
             print(f"   ✓ Using pre-calculated features ({len(feature_cols)} features)")
         else:
-            print(f"   ⚠️  Only {len(feature_cols)} features found - may need to run calculate_all_features.py")
+            print(f"   ⚠️  Only {len(feature_cols)} features found - need to calculate features")
+            print(f"   💡 Run: python3 calculate_all_features.py")
 
         return df
     else:
