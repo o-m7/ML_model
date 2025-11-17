@@ -1302,9 +1302,40 @@ class RealisticBacktester:
                 else:
                     position_size_lots = self.config.max_position_size
 
-                # Exit after max_holding_bars or at end of data
-                exit_idx = min(i + self.config.max_holding_bars, len(df) - 1)
-                exit_price = df.loc[exit_idx, 'close']
+                # Simulate TP/SL exit (MUST match label creation logic!)
+                tp_price = entry_price + (self.config.tp_atr_multiple * atr)
+                sl_price = entry_price - (self.config.sl_atr_multiple * atr)
+
+                # Scan forward bars to find TP/SL hit
+                exit_idx = None
+                exit_price = None
+                exit_reason = None
+
+                for j in range(1, self.config.max_holding_bars + 1):
+                    if i + j >= len(df):
+                        break
+
+                    bar_high = df.loc[i + j, 'high']
+                    bar_low = df.loc[i + j, 'low']
+
+                    # Check TP hit (prioritize TP over SL if both hit same bar)
+                    if bar_high >= tp_price:
+                        exit_idx = i + j
+                        exit_price = tp_price  # Exit at TP price
+                        exit_reason = 'TP'
+                        break
+                    # Check SL hit
+                    elif bar_low <= sl_price:
+                        exit_idx = i + j
+                        exit_price = sl_price  # Exit at SL price
+                        exit_reason = 'SL'
+                        break
+
+                # If neither TP nor SL hit, exit at max holding period
+                if exit_idx is None:
+                    exit_idx = min(i + self.config.max_holding_bars, len(df) - 1)
+                    exit_price = df.loc[exit_idx, 'close']
+                    exit_reason = 'TIME'
 
                 # Apply spread and slippage to entry and exit
                 # Entry: pay ask (close + spread/2) + slippage
@@ -1323,7 +1354,8 @@ class RealisticBacktester:
                 # Debug output (first 3 trades only)
                 if len(trades) < 3:
                     print(f"\n   DEBUG Trade #{len(trades)+1}:")
-                    print(f"      Entry: ${entry_price:.2f}, Exit: ${exit_price:.2f}")
+                    print(f"      Entry: ${entry_price:.2f}, Exit: ${exit_price:.2f} [{exit_reason}]")
+                    print(f"      TP: ${tp_price:.2f}, SL: ${sl_price:.2f}")
                     print(f"      ATR: ${atr:.2f}, SL distance: ${sl_distance:.2f}")
                     print(f"      Risk amount: ${risk_amount:.2f}")
                     print(f"      Position size: {position_size_lots:.4f} lots")
@@ -1339,6 +1371,9 @@ class RealisticBacktester:
                     'exit_idx': exit_idx,
                     'exit_time': df.loc[exit_idx, 'timestamp'] if 'timestamp' in df.columns else exit_idx,
                     'exit_price': exit_price,
+                    'exit_reason': exit_reason,
+                    'tp_price': tp_price,
+                    'sl_price': sl_price,
                     'position_size_lots': position_size_lots,
                     'pnl': trade_pnl,
                     'pnl_pct': (trade_pnl / equity) * 100.0,
