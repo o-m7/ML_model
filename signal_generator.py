@@ -1,378 +1,604 @@
-#!/usr/bin/env python3
 """
-STANDALONE SIGNAL GENERATOR FOR GITHUB ACTIONS
-================================================
-Generates signals without needing the API server running.
-Uses ensemble predictions from multiple models.
+═══════════════════════════════════════════════════════════════════════════════
+PRODUCTION SIGNAL GENERATOR V2.2
+═══════════════════════════════════════════════════════════════════════════════
 
-IMPORTANT: Fixed to use unified cost model and execution guardrails
+Loads trained models and generates real-time trading signals for Supabase.
+
+Features:
+- Multi-timeframe support (5T, 15T, 30T)
+- Confidence filtering (thresholds from training)
+- Regime filtering (avoids bad regimes)
+- Deduplication (no repeated signals)
+- Error handling and logging
+- Supabase integration
+
+Usage:
+    # Generate signals once
+    python signal_generator_production.py --symbol XAUUSD --generate
+    
+    # Continuous monitoring (checks every 5 minutes)
+    python signal_generator_production.py --symbol XAUUSD --monitor --interval 300
+    
+    # Specific timeframe only
+    python signal_generator_production.py --symbol XAUUSD --timeframe 15T --generate
 """
 
-import os
-import sys
-import time
-import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta, timezone
+import pickle
+import json
 from pathlib import Path
-from typing import Optional
-from dotenv import load_dotenv
-from supabase import create_client
-import pandas_ta as ta
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
+import argparse
+import time
+import warnings
 
-# Import ensemble predictor and news filter
-sys.path.insert(0, str(Path(__file__).parent))
-from ensemble_predictor import EnsemblePredictor
-from news_filter import is_in_blackout_window
-from production_final_system import BalancedModel
-from live_feature_utils import build_feature_frame
+warnings.filterwarnings('ignore')
 
-# Import unified cost model and guardrails
-from market_costs import get_tp_sl, apply_entry_costs, calculate_tp_sl_prices, get_costs
-from execution_guardrails import get_moderate_guardrails
-
-# Ensure BalancedModel is available for pickle when this script runs as __main__
-_main_module = sys.modules.get("__main__")
-if _main_module is not None and not hasattr(_main_module, "BalancedModel"):
-    setattr(_main_module, "BalancedModel", BalancedModel)
-
-# Load environment
-load_dotenv()
-
-# Configuration
-POLYGON_API_KEY = os.getenv('POLYGON_API_KEY')
-POLYGON_S3_ACCESS_KEY = os.getenv('POLYGON_S3_ACCESS_KEY')
-POLYGON_S3_SECRET_KEY = os.getenv('POLYGON_S3_SECRET_KEY')
-POLYGON_S3_ENDPOINT = os.getenv('POLYGON_S3_ENDPOINT')
-POLYGON_S3_BUCKET = os.getenv('POLYGON_S3_BUCKET')
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_KEY = os.getenv('SUPABASE_KEY')
-
-if not all([POLYGON_API_KEY, SUPABASE_URL, SUPABASE_KEY]):
-    print("❌ Missing required environment variables!")
-    print(f"   POLYGON_API_KEY: {'✅' if POLYGON_API_KEY else '❌'}")
-    print(f"   SUPABASE_URL: {'✅' if SUPABASE_URL else '❌'}")
-    print(f"   SUPABASE_KEY: {'✅' if SUPABASE_KEY else '❌'}")
-    sys.exit(1)
-
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# Models to process (from your production system)
-# NOTE: 4H timeframes temporarily disabled - Polygon REST API doesn't provide real-time 4H forex data
-MODELS = [
-    ('XAGUSD', '15T'), ('XAGUSD', '1H'), ('XAGUSD', '30T'), ('XAGUSD', '5T'),
-    ('XAUUSD', '15T'), ('XAUUSD', '1H'), ('XAUUSD', '30T'), ('XAUUSD', '5T'),
-]
-
-# Ticker mapping for Polygon
-TICKER_MAP = {
-    'XAUUSD': 'C:XAUUSD',
-    'XAGUSD': 'C:XAGUSD',
-}
-
-# TP/SL Parameters now unified in market_costs.py
-# Old hardcoded SYMBOL_PARAMS removed to eliminate config drift
-
-TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
-
-# Number of bars to keep per timeframe (balances history with API limits)
-BARS_PER_TF = {
-    '5T': 400,
-    '15T': 240,
-    '30T': 160,
-    '1H': 120,
-    '4H': 80,
-}
-
-# Minimum bars needed per timeframe
-MIN_BARS_REQUIRED = {
-    '5T': 120,
-    '15T': 120,
-    '30T': 120,
-    '1H': 80,
-    '4H': 40,
-}
-
-# Cache for ensemble predictors (one per symbol)
-ENSEMBLE_CACHE = {}
-
-# Sentiment filtering thresholds
-SENTIMENT_LONG_THRESHOLD = 0.2   # Only take LONG if sentiment > 0.2
-SENTIMENT_SHORT_THRESHOLD = -0.2  # Only take SHORT if sentiment < -0.2
+# Supabase
+try:
+    from supabase import create_client, Client
+    SUPABASE_AVAILABLE = True
+except ImportError:
+    print("⚠️  Install supabase: pip install supabase")
+    SUPABASE_AVAILABLE = False
 
 
-def get_ensemble(symbol: str) -> Optional[EnsemblePredictor]:
-    """Get or create ensemble predictor for a symbol."""
-    if symbol not in ENSEMBLE_CACHE:
-        try:
-            ENSEMBLE_CACHE[symbol] = EnsemblePredictor(symbol)
-        except Exception as e:
-            print(f"  ⚠️  Cannot load ensemble for {symbol}: {e}")
-            return None
-    return ENSEMBLE_CACHE[symbol]
+# ═══════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════
 
-
-def get_recent_sentiment(symbol: str) -> float:
-    """Get most recent sentiment for symbol from Supabase."""
-    try:
-        # Get sentiment from last 6 hours
-        response = supabase.table('sentiment_data').select(
-            'aggregate_sentiment'
-        ).eq(
-            'symbol', symbol
-        ).order(
-            'timestamp', desc=True
-        ).limit(1).execute()
-        
-        if response.data and len(response.data) > 0:
-            sentiment = response.data[0]['aggregate_sentiment']
-            return float(sentiment)
-        else:
-            return 0.0  # Neutral if no data
+class SignalConfig:
+    """Configuration for signal generation."""
     
-    except Exception as e:
-        print(f"  ⚠️  Error fetching sentiment for {symbol}: {e}")
-        return 0.0  # Neutral on error
-
-
-def fetch_polygon_data(symbol: str, timeframe: str, bars: int = 200):
-    """Fetch OHLCV data from Polygon REST API (PAID PLAN - REAL-TIME)."""
-    ticker = TICKER_MAP.get(symbol, symbol)
-    minutes = TIMEFRAME_MINUTES[timeframe]
+    # Paths
+    MODELS_DIR = Path("production_models")
+    FEATURE_STORE = Path("ML_model/ML_model/feature_store")
     
-    # For 4H, fetch 1H bars and resample (4H bars are stale on API)
-    if timeframe == '4H':
-        fetch_minutes = 60  # Fetch 1H bars
-        bars_to_fetch = bars * 8  # Need 8x more to ensure fresh data after resampling
-    else:
-        fetch_minutes = minutes
-        bars_to_fetch = bars
+    # Supabase (set your credentials)
+    SUPABASE_URL = "YOUR_SUPABASE_URL"  # Replace with your URL
+    SUPABASE_KEY = "YOUR_SUPABASE_KEY"  # Replace with your key
+    SIGNALS_TABLE = "trading_signals"   # Your table name
     
-    end_time = datetime.now(timezone.utc)
-    start_time = end_time - timedelta(minutes=fetch_minutes * bars_to_fetch * 2)
+    # Timeframes to monitor
+    ACTIVE_TIMEFRAMES = ['5T', '15T', '30T']
     
-    params = {
-        'adjusted': 'true',
-        'sort': 'asc',
-        'limit': 50000,
-        'apiKey': POLYGON_API_KEY
+    # Signal validity (how long a signal is "fresh")
+    SIGNAL_VALIDITY_MINUTES = {
+        '5T': 15,   # 5-min signals valid for 15 minutes
+        '15T': 45,  # 15-min signals valid for 45 minutes
+        '30T': 90   # 30-min signals valid for 90 minutes
     }
     
-    multiplier = fetch_minutes
-    timespan = 'minute'
-    from_date = start_time.strftime('%Y-%m-%d')
-    to_date = end_time.strftime('%Y-%m-%d')
-    url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{from_date}/{to_date}"
+    # Lookback for feature calculation (bars)
+    LOOKBACK_BARS = 500  # Enough for 200 EMA + buffer
+
+
+CONFIG = SignalConfig()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODEL LOADER
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ModelLoader:
+    """Load and manage production models."""
     
-    try:
-        response = requests.get(url, params=params, timeout=30)
-        data = response.json()
+    def __init__(self, models_dir: Path):
+        self.models_dir = models_dir
+        self.models = {}
+        self.metadata = {}
+    
+    def load_all_models(self, symbol: str) -> Dict:
+        """Load all available models for a symbol."""
+        print(f"\n{'='*80}")
+        print(f"LOADING PRODUCTION MODELS")
+        print(f"{'='*80}")
         
-        if 'results' not in data or not data['results']:
+        for timeframe in CONFIG.ACTIVE_TIMEFRAMES:
+            try:
+                self.load_model(symbol, timeframe)
+            except Exception as e:
+                print(f"⚠️  Failed to load {timeframe}: {e}")
+        
+        print(f"\n✅ Loaded {len(self.models)} models: {list(self.models.keys())}\n")
+        return self.models
+    
+    def load_model(self, symbol: str, timeframe: str):
+        """Load a specific model."""
+        # Find model file (could be any model type)
+        model_files = list(self.models_dir.glob(f"{symbol}_{timeframe}_*.pkl"))
+        
+        if not model_files:
+            raise FileNotFoundError(f"No model found for {symbol} {timeframe}")
+        
+        model_path = model_files[0]  # Take first match
+        metadata_path = model_path.with_name(model_path.stem + "_meta.json")
+        
+        # Load model
+        with open(model_path, 'rb') as f:
+            model_data = pickle.load(f)
+        
+        # Load metadata
+        if metadata_path.exists():
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+        else:
+            metadata = {}
+        
+        key = f"{symbol}_{timeframe}"
+        self.models[key] = model_data
+        self.metadata[key] = metadata
+        
+        print(f"✅ Loaded: {timeframe} - {model_data['model_name']} "
+              f"(Threshold: {model_data['threshold']:.2f}, "
+              f"PF: {metadata.get('performance', {}).get('profit_factor', 'N/A')})")
+    
+    def get_model(self, symbol: str, timeframe: str) -> Optional[Dict]:
+        """Get a loaded model."""
+        key = f"{symbol}_{timeframe}"
+        return self.models.get(key)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FEATURE ENGINEERING (SAME AS TRAINING)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class FeatureEngineer:
+    """Apply same feature engineering as training."""
+    
+    @staticmethod
+    def add_regime_features(df: pd.DataFrame) -> pd.DataFrame:
+        """Regime features."""
+        features = df.copy()
+        
+        if 'atr' in features.columns:
+            features['regime_vol_percentile'] = features['atr'].rolling(100).apply(
+                lambda x: (x.iloc[-1] > x).sum() / len(x) if len(x) > 0 else 0.5
+            )
+            features['regime_vol'] = pd.cut(
+                features['regime_vol_percentile'],
+                bins=[0, 0.33, 0.67, 1.0],
+                labels=[0, 1, 2]
+            ).astype(float)
+        
+        if 'ema_20' in features.columns and 'ema_50' in features.columns:
+            features['regime_trend_20_50'] = ((features['ema_20'] > features['ema_50']).astype(int) * 2 - 1)
+        
+        if 'ema_50' in features.columns and 'ema_200' in features.columns:
+            features['regime_trend_50_200'] = ((features['ema_50'] > features['ema_200']).astype(int) * 2 - 1)
+        
+        if 'hour' in features.columns:
+            features['regime_session_asian'] = ((features['hour'] >= 0) & (features['hour'] < 8)).astype(int)
+            features['regime_session_london'] = ((features['hour'] >= 8) & (features['hour'] < 16)).astype(int)
+            features['regime_session_ny'] = ((features['hour'] >= 13) & (features['hour'] < 21)).astype(int)
+        
+        if 'close' in features.columns:
+            high_20 = features['high'].rolling(20).max()
+            low_20 = features['low'].rolling(20).min()
+            range_20 = high_20 - low_20
+            features['regime_range_position'] = (features['close'] - low_20) / (range_20 + 1e-8)
+        
+        return features
+    
+    @staticmethod
+    def add_momentum_features(df: pd.DataFrame) -> pd.DataFrame:
+        """Momentum features."""
+        features = df.copy()
+        
+        for period in [5, 10, 20]:
+            features[f'momentum_roc_{period}'] = features['close'].pct_change(period)
+        
+        if 'atr' in features.columns:
+            features['momentum_strength_5'] = features['close'].diff(5) / (features['atr'] + 1e-8)
+            features['momentum_strength_10'] = features['close'].diff(10) / (features['atr'] + 1e-8)
+        
+        if 'momentum_roc_5' in features.columns and 'momentum_roc_10' in features.columns:
+            features['momentum_accel'] = features['momentum_roc_5'] - features['momentum_roc_10']
+        
+        return features
+    
+    @staticmethod
+    def add_mean_reversion_features(df: pd.DataFrame) -> pd.DataFrame:
+        """Mean reversion features."""
+        features = df.copy()
+        
+        for ma in [20, 50, 100]:
+            if f'sma_{ma}' in features.columns:
+                features[f'mr_distance_sma_{ma}'] = (
+                    (features['close'] - features[f'sma_{ma}']) / (features[f'sma_{ma}'] + 1e-8)
+                )
+        
+        if 'bb_upper' in features.columns and 'bb_lower' in features.columns:
+            features['mr_bb_position'] = (
+                (features['close'] - features['bb_lower']) / 
+                (features['bb_upper'] - features['bb_lower'] + 1e-8)
+            )
+            features['mr_bb_extreme'] = (
+                (features['mr_bb_position'] > 0.95) | (features['mr_bb_position'] < 0.05)
+            ).astype(int)
+        
+        if 'rsi' in features.columns:
+            features['mr_rsi_oversold'] = (features['rsi'] < 30).astype(int)
+            features['mr_rsi_overbought'] = (features['rsi'] > 70).astype(int)
+            features['mr_rsi_neutral'] = ((features['rsi'] >= 40) & (features['rsi'] <= 60)).astype(int)
+        
+        return features
+    
+    @staticmethod
+    def add_microstructure_features(df: pd.DataFrame) -> pd.DataFrame:
+        """Microstructure features."""
+        features = df.copy()
+        
+        features['micro_body'] = abs(features['close'] - features['open'])
+        features['micro_upper_wick'] = features['high'] - np.maximum(features['open'], features['close'])
+        features['micro_lower_wick'] = np.minimum(features['open'], features['close']) - features['low']
+        features['micro_total_range'] = features['high'] - features['low']
+        
+        features['micro_body_ratio'] = features['micro_body'] / (features['micro_total_range'] + 1e-8)
+        features['micro_wick_ratio'] = (
+            (features['micro_upper_wick'] + features['micro_lower_wick']) / 
+            (features['micro_total_range'] + 1e-8)
+        )
+        
+        if 'volume' in features.columns:
+            vol_ma = features['volume'].rolling(20).mean()
+            features['micro_volume_surge'] = features['volume'] / (vol_ma + 1)
+            features['micro_volume_anomaly'] = (features['micro_volume_surge'] > 2.0).astype(int)
+        
+        features['micro_gap'] = features['open'] - features['close'].shift(1)
+        features['micro_gap_pct'] = features['micro_gap'] / (features['close'].shift(1) + 1e-8)
+        
+        return features
+    
+    @staticmethod
+    def engineer_all_features(df: pd.DataFrame) -> pd.DataFrame:
+        """Apply all feature engineering."""
+        df = FeatureEngineer.add_regime_features(df)
+        df = FeatureEngineer.add_momentum_features(df)
+        df = FeatureEngineer.add_mean_reversion_features(df)
+        df = FeatureEngineer.add_microstructure_features(df)
+        return df
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SIGNAL GENERATOR
+# ═══════════════════════════════════════════════════════════════════════════
+
+class SignalGenerator:
+    """Generate trading signals from models."""
+    
+    def __init__(self, model_loader: ModelLoader):
+        self.model_loader = model_loader
+        self.last_signals = {}  # Deduplication
+    
+    def load_latest_data(self, symbol: str, timeframe: str) -> pd.DataFrame:
+        """Load latest data from feature store."""
+        file_path = CONFIG.FEATURE_STORE / symbol / f"{symbol}_{timeframe}.parquet"
+        
+        if not file_path.exists():
+            raise FileNotFoundError(f"Feature store not found: {file_path}")
+        
+        # Load data
+        df = pd.read_parquet(file_path)
+        
+        # Sort by timestamp
+        df = df.sort_values('timestamp').reset_index(drop=True)
+        
+        # Take only recent bars (for performance)
+        df = df.tail(CONFIG.LOOKBACK_BARS).copy()
+        
+        return df
+    
+    def generate_signal(self, symbol: str, timeframe: str) -> Optional[Dict]:
+        """Generate signal for a specific symbol/timeframe."""
+        
+        try:
+            # Load model
+            model_data = self.model_loader.get_model(symbol, timeframe)
+            if model_data is None:
+                print(f"⚠️  No model for {symbol} {timeframe}")
+                return None
+            
+            # Load latest data
+            df = self.load_latest_data(symbol, timeframe)
+            
+            # Engineer features
+            df = FeatureEngineer.engineer_all_features(df)
+            df = df.dropna()
+            
+            if len(df) == 0:
+                print(f"⚠️  No valid data after feature engineering")
+                return None
+            
+            # Get latest bar
+            latest_idx = df.index[-1]
+            latest_row = df.iloc[-1]
+            
+            # Extract features (same order as training)
+            feature_cols = model_data['feature_cols']
+            missing = [c for c in feature_cols if c not in df.columns]
+            if missing:
+                print(f"⚠️  Missing features: {missing[:5]}...")
+                return None
+            
+            X = df.loc[[latest_idx], feature_cols].values
+            
+            # Make prediction
+            model = model_data['model']
+            scaler = model_data['scaler']
+            
+            X_scaled = scaler.transform(X)
+            confidence = model.predict_proba(X_scaled)[0, 1]
+            
+            # Apply confidence threshold
+            threshold = model_data['threshold']
+            signal_direction = 'BUY' if confidence >= threshold else 'NEUTRAL'
+            
+            # Check regime filter
+            bad_regimes = model_data.get('bad_regimes', [])
+            current_regime = self._get_regime(latest_row)
+            
+            if current_regime in bad_regimes:
+                print(f"🚫 {timeframe}: Bad regime detected ({current_regime}) - No signal")
+                return None
+            
+            # Only return signal if it's actionable (BUY)
+            if signal_direction == 'NEUTRAL':
+                return None
+            
+            # Build signal
+            signal = {
+                'symbol': symbol,
+                'timeframe': timeframe,
+                'direction': signal_direction,
+                'confidence': float(confidence),
+                'threshold': float(threshold),
+                'entry_price': float(latest_row['close']),
+                'timestamp': latest_row['timestamp'].isoformat() if hasattr(latest_row['timestamp'], 'isoformat') else str(latest_row['timestamp']),
+                'model_name': model_data['model_name'],
+                'tp_multiplier': float(model_data['tp_mult']),
+                'sl_multiplier': float(model_data['sl_mult']),
+                'atr': float(latest_row['atr']),
+                'regime': current_regime,
+                'metadata': {
+                    'profit_factor': model_data.get('performance', {}).get('profit_factor'),
+                    'win_rate': model_data.get('performance', {}).get('win_rate'),
+                    'max_drawdown': model_data.get('performance', {}).get('max_drawdown_pct')
+                }
+            }
+            
+            # Calculate TP/SL prices
+            atr = latest_row['atr']
+            signal['tp_price'] = float(signal['entry_price'] + (signal['tp_multiplier'] * atr))
+            signal['sl_price'] = float(signal['entry_price'] - (signal['sl_multiplier'] * atr))
+            
+            # Add signal ID for deduplication
+            signal['signal_id'] = f"{symbol}_{timeframe}_{signal['timestamp']}"
+            
+            return signal
+            
+        except Exception as e:
+            print(f"❌ Error generating signal for {symbol} {timeframe}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
-            
-        df = pd.DataFrame(data['results'])
-        df['timestamp'] = pd.to_datetime(df['t'], unit='ms', utc=True)
-        df = df.rename(columns={'o': 'open', 'h': 'high', 'l': 'low', 'c': 'close', 'v': 'volume'})
-        df = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
-        df = df.sort_index()
-        
-        # Resample to 4H if needed
-        if timeframe == '4H':
-            df = df.resample('4H').agg({
-                'open': 'first',
-                'high': 'max',
-                'low': 'min',
-                'close': 'last',
-                'volume': 'sum'
-            }).dropna()
-        
-        return df.tail(bars)
-        
-    except Exception as e:
-        print(f"  ❌ Error fetching {symbol}: {e}")
-        return None
-
-
-def generate_simple_signal(df):
-    """Generate a simple signal based on price action (fallback when ensemble unavailable)."""
-    df['sma_20'] = df['close'].rolling(20).mean()
-    df['sma_50'] = df['close'].rolling(50).mean()
-    df['rsi'] = ta.rsi(df['close'], length=14)
     
-    current = df.iloc[-1]
+    def _get_regime(self, row: pd.Series) -> str:
+        """Extract regime from row."""
+        if 'regime_vol' in row.index:
+            regime_map = {0: 'Low Vol', 1: 'Med Vol', 2: 'High Vol'}
+            return regime_map.get(row['regime_vol'], 'Unknown')
+        return 'Unknown'
     
-    if current['close'] > current['sma_20'] > current['sma_50'] and current['rsi'] < 70:
-        return 'long', 0.55, 0.10
-    elif current['close'] < current['sma_20'] < current['sma_50'] and current['rsi'] > 30:
-        return 'short', 0.55, 0.10
-    else:
-        return 'long' if current['close'] > current['sma_20'] else 'short', 0.45, 0.05
-
-
-def process_symbol(symbol, timeframe):
-    """Process one symbol/timeframe using ensemble predictions."""
-    try:
-        blackout_result = is_in_blackout_window(symbol)
-        if blackout_result['is_blackout']:
-            print(f"  🚫 {symbol} {timeframe}: BLACKOUT - {blackout_result['reason']}")
-            return
-
-        raw_df = fetch_polygon_data(symbol, timeframe, bars=BARS_PER_TF.get(timeframe, 200))
-        min_bars = MIN_BARS_REQUIRED.get(timeframe, 120)
-        if raw_df is None or len(raw_df) < min_bars:
-            got = 0 if raw_df is None else len(raw_df)
-            print(f"  ⚠️  {symbol} {timeframe}: Insufficient data (have {got} < {min_bars} bars)")
-            return
-
-        last_bar_time = raw_df.index[-1]
-        staleness = datetime.now(timezone.utc) - last_bar_time
+    def is_duplicate(self, signal: Dict) -> bool:
+        """Check if signal is duplicate of recent signal."""
+        key = f"{signal['symbol']}_{signal['timeframe']}"
         
-        # For 4H, allow up to 24 hours staleness (S3 files update overnight)
-        if timeframe == '4H':
-            max_allowed = timedelta(hours=24)
-        else:
-            max_allowed = timedelta(minutes=TIMEFRAME_MINUTES[timeframe] * 2)
+        if key in self.last_signals:
+            last_signal = self.last_signals[key]
             
-        if staleness > max_allowed:
-            print(f"  ⚠️  {symbol} {timeframe}: Stale data (last bar {last_bar_time} UTC, Δ {staleness})")
-            return
+            # Check if within validity window
+            last_time = datetime.fromisoformat(last_signal['timestamp'])
+            current_time = datetime.fromisoformat(signal['timestamp'])
+            validity = CONFIG.SIGNAL_VALIDITY_MINUTES.get(signal['timeframe'], 30)
+            
+            if (current_time - last_time).total_seconds() < validity * 60:
+                return True  # Too recent
+        
+        # Update last signal
+        self.last_signals[key] = signal
+        return False
 
-        feature_df = build_feature_frame(raw_df)
-        if feature_df.empty:
-            print(f"  ⚠️  {symbol} {timeframe}: Unable to build feature set (insufficient history or NaNs)")
-            return
 
-        features_row = feature_df.tail(1)
+# ═══════════════════════════════════════════════════════════════════════════
+# SUPABASE INTEGRATION
+# ═══════════════════════════════════════════════════════════════════════════
 
-        ensemble = get_ensemble(symbol)
-        required_features = set()
-        if ensemble:
-            for model_info in ensemble.models.values():
-                required_features.update(model_info['features'])
-        missing_features = required_features - set(features_row.columns)
-        if missing_features:
-            print(f"  ⚠️  {symbol} {timeframe}: Missing model features {sorted(missing_features)[:10]}... using fallback")
-            ensemble = None
+class SupabaseClient:
+    """Send signals to Supabase."""
+    
+    def __init__(self):
+        if not SUPABASE_AVAILABLE:
+            raise ImportError("Supabase not installed")
+        
+        self.client: Client = create_client(
+            CONFIG.SUPABASE_URL,
+            CONFIG.SUPABASE_KEY
+        )
+    
+    def send_signal(self, signal: Dict) -> bool:
+        """Send signal to Supabase."""
+        try:
+            # Format signal for Supabase
+            data = {
+                'signal_id': signal['signal_id'],
+                'symbol': signal['symbol'],
+                'timeframe': signal['timeframe'],
+                'direction': signal['direction'],
+                'confidence': signal['confidence'],
+                'entry_price': signal['entry_price'],
+                'tp_price': signal['tp_price'],
+                'sl_price': signal['sl_price'],
+                'timestamp': signal['timestamp'],
+                'model_name': signal['model_name'],
+                'atr': signal['atr'],
+                'regime': signal['regime'],
+                'metadata': signal['metadata'],
+                'status': 'ACTIVE',
+                'created_at': datetime.utcnow().isoformat()
+            }
+            
+            # Insert into Supabase
+            response = self.client.table(CONFIG.SIGNALS_TABLE).insert(data).execute()
+            
+            print(f"✅ Signal sent to Supabase: {signal['signal_id']}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to send signal to Supabase: {e}")
+            return False
+    
+    def get_active_signals(self, symbol: str = None) -> List[Dict]:
+        """Get active signals from Supabase."""
+        try:
+            query = self.client.table(CONFIG.SIGNALS_TABLE).select("*").eq("status", "ACTIVE")
+            
+            if symbol:
+                query = query.eq("symbol", symbol)
+            
+            response = query.execute()
+            return response.data
+            
+        except Exception as e:
+            print(f"❌ Failed to fetch signals: {e}")
+            return []
 
-        if ensemble:
-            ensemble_result = ensemble.ensemble_predict(features_row, strategy='performance_weighted')
-            signal_type = ensemble_result['signal']
-            confidence = ensemble_result['confidence']
-            edge = ensemble_result['edge']
-            num_models = ensemble_result['num_models']
 
-            if num_models == 0 or signal_type == 'flat' or confidence < 0.35:
-                reason = "no model votes" if num_models == 0 else f"conf {confidence:.3f}"
-                print(f"  ⚠️  {symbol} {timeframe}: Ensemble fallback triggered ({reason})")
-                signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
-                source = 'fallback'
+# ═══════════════════════════════════════════════════════════════════════════
+# MAIN APPLICATION
+# ═══════════════════════════════════════════════════════════════════════════
+
+class SignalGeneratorApp:
+    """Main application."""
+    
+    def __init__(self, symbol: str):
+        self.symbol = symbol
+        self.model_loader = ModelLoader(CONFIG.MODELS_DIR)
+        self.signal_generator = SignalGenerator(self.model_loader)
+        
+        # Initialize Supabase if available
+        self.supabase = None
+        if SUPABASE_AVAILABLE and CONFIG.SUPABASE_URL != "YOUR_SUPABASE_URL":
+            self.supabase = SupabaseClient()
+    
+    def initialize(self):
+        """Load models."""
+        print(f"\n{'#'*80}")
+        print(f"# PRODUCTION SIGNAL GENERATOR V2.2")
+        print(f"# Symbol: {self.symbol}")
+        print(f"# Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'#'*80}")
+        
+        self.model_loader.load_all_models(self.symbol)
+    
+    def generate_signals(self, timeframe: Optional[str] = None):
+        """Generate signals for all or specific timeframe."""
+        print(f"\n{'='*80}")
+        print(f"GENERATING SIGNALS - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"{'='*80}\n")
+        
+        timeframes = [timeframe] if timeframe else CONFIG.ACTIVE_TIMEFRAMES
+        signals_generated = []
+        
+        for tf in timeframes:
+            print(f"🔍 Checking {self.symbol} {tf}...")
+            
+            signal = self.signal_generator.generate_signal(self.symbol, tf)
+            
+            if signal is None:
+                print(f"   No signal\n")
+                continue
+            
+            # Check duplicate
+            if self.signal_generator.is_duplicate(signal):
+                print(f"   ⚠️  Duplicate signal (too recent)\n")
+                continue
+            
+            # Print signal
+            print(f"   🎯 SIGNAL GENERATED!")
+            print(f"   Direction: {signal['direction']}")
+            print(f"   Confidence: {signal['confidence']:.1%} (threshold: {signal['threshold']:.1%})")
+            print(f"   Entry: ${signal['entry_price']:.2f}")
+            print(f"   TP: ${signal['tp_price']:.2f} (+{signal['tp_multiplier']:.1f}R)")
+            print(f"   SL: ${signal['sl_price']:.2f} (-{signal['sl_multiplier']:.1f}R)")
+            print(f"   Regime: {signal['regime']}\n")
+            
+            signals_generated.append(signal)
+            
+            # Send to Supabase
+            if self.supabase:
+                self.supabase.send_signal(signal)
             else:
-                print(f"  📊 {symbol} {timeframe}: Ensemble ({num_models} models) → {signal_type.upper()} (conf: {confidence:.3f}, edge: {edge:.3f})")
-                source = 'ensemble'
-        else:
-            signal_type, confidence, edge = generate_simple_signal(raw_df.copy())
-            print(f"  ⚠️  {symbol} {timeframe}: Using fallback signal → {signal_type.upper()}")
-            source = 'fallback'
+                print(f"   ⚠️  Supabase not configured - signal not sent\n")
+        
+        print(f"\n{'='*80}")
+        print(f"SUMMARY: {len(signals_generated)} signals generated")
+        print(f"{'='*80}\n")
+        
+        return signals_generated
+    
+    def monitor(self, interval_seconds: int = 300):
+        """Continuously monitor and generate signals."""
+        print(f"\n🔄 MONITORING MODE")
+        print(f"   Checking every {interval_seconds} seconds ({interval_seconds/60:.0f} minutes)")
+        print(f"   Press Ctrl+C to stop\n")
+        
+        try:
+            while True:
+                self.generate_signals()
+                print(f"😴 Sleeping for {interval_seconds} seconds...")
+                print(f"   Next check at: {(datetime.now() + timedelta(seconds=interval_seconds)).strftime('%H:%M:%S')}\n")
+                time.sleep(interval_seconds)
+                
+        except KeyboardInterrupt:
+            print(f"\n\n⏹️  Monitoring stopped by user")
 
-        sentiment = get_recent_sentiment(symbol)
-        if abs(sentiment) > 1e-3:
-            if signal_type == 'long' and sentiment < SENTIMENT_LONG_THRESHOLD:
-                print(f"  🚫 {symbol} {timeframe}: LONG filtered by sentiment ({sentiment:.3f} < {SENTIMENT_LONG_THRESHOLD})")
-                return
-            if signal_type == 'short' and sentiment > SENTIMENT_SHORT_THRESHOLD:
-                print(f"  🚫 {symbol} {timeframe}: SHORT filtered by sentiment ({sentiment:.3f} > {SENTIMENT_SHORT_THRESHOLD})")
-                return
-            print(f"  ✅ {symbol} {timeframe}: Sentiment OK ({sentiment:.3f})")
 
-        atr = float(features_row['atr14'].iloc[-1])
-        if pd.isna(atr) or atr == 0:
-            atr = float(raw_df['close'].iloc[-1]) * 0.02
-
-        # IMPORTANT: Entry will be at next bar open (unknown at signal time)
-        # Use current close as proxy and apply realistic entry costs
-        current_close = float(raw_df['close'].iloc[-1])
-        last_bar_time = raw_df.index[-1]
-
-        # Apply execution guardrails
-        print(f"  🛡️  Checking execution guardrails...")
-        guardrails = get_moderate_guardrails()
-        costs = get_costs(symbol)
-
-        # Convert spread pips to price
-        if symbol == 'XAUUSD':
-            current_spread = costs.spread_pips * 0.10  # 1 pip = $0.10
-        elif symbol == 'XAGUSD':
-            current_spread = costs.spread_pips * 0.01  # 1 pip = $0.01
-        else:  # Forex
-            current_spread = costs.spread_pips * 0.0001  # 1 pip = 0.0001
-
-        guardrail_results = guardrails.check_all(
-            last_bar_time=last_bar_time,
-            timeframe_minutes=TIMEFRAME_MINUTES[timeframe],
-            current_spread=current_spread,
-            atr=atr,
-            price=current_close,
-            confidence=confidence
-        )
-
-        # Check if guardrails passed
-        if not guardrails.all_passed(guardrail_results):
-            failures = guardrails.get_failures(guardrail_results)
-            print(f"  ❌ {symbol} {timeframe}: Guardrails FAILED - Signal blocked:")
-            for name, reason in failures.items():
-                print(f"     • {name}: {reason}")
-            return
-
-        print(f"  ✅ {symbol} {timeframe}: All guardrails passed")
-
-        # Estimate entry price with costs (next bar open ≈ current close + costs)
-        notional = 100000  # $100k position for cost calculation
-        estimated_entry, entry_commission, entry_slippage = apply_entry_costs(
-            symbol, current_close, notional, direction=signal_type
-        )
-
-        # Calculate TP/SL using unified cost model
-        tp_price, sl_price = calculate_tp_sl_prices(symbol, timeframe, estimated_entry, signal_type, atr)
-
-        supabase_payload = {
-            'symbol': symbol,
-            'timeframe': timeframe,
-            'signal_type': signal_type,
-            'confidence': float(confidence),
-            'edge': float(edge),
-            'entry_price': estimated_entry,  # Now includes costs
-            'take_profit': tp_price,
-            'stop_loss': sl_price,
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'status': 'active',
-            'expires_at': (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
-        }
-        supabase.table('live_signals').insert(supabase_payload).execute()
-
-        print(f"  ✅ {symbol} {timeframe}: {signal_type.upper()} @ {estimated_entry:.5f} (TP: {tp_price:.5f}, SL: {sl_price:.5f})")
-    except Exception as e:
-        print(f"  ❌ Error processing {symbol} {timeframe}: {e}")
-
+# ═══════════════════════════════════════════════════════════════════════════
+# CLI
+# ═══════════════════════════════════════════════════════════════════════════
 
 def main():
-    """Main execution - generates signals for all production models."""
-    print("\n" + "="*80)
-    print(f"STANDALONE SIGNAL GENERATOR - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("="*80 + "\n")
+    parser = argparse.ArgumentParser(
+        description='Production Signal Generator V2.2',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     
-    success_count = 0
-    for symbol, timeframe in MODELS:
-        process_symbol(symbol, timeframe)
-        success_count += 1
-        time.sleep(0.5)
+    parser.add_argument('--symbol', type=str, default='XAUUSD', help='Trading symbol')
+    parser.add_argument('--timeframe', type=str, help='Specific timeframe (5T, 15T, 30T)')
+    parser.add_argument('--generate', action='store_true', help='Generate signals once')
+    parser.add_argument('--monitor', action='store_true', help='Continuous monitoring')
+    parser.add_argument('--interval', type=int, default=300, help='Monitor interval (seconds)')
     
-    print("\n" + "="*80)
-    print(f"✅ Processed {success_count}/{len(MODELS)} models")
-    print("="*80 + "\n")
+    args = parser.parse_args()
+    
+    if not args.generate and not args.monitor:
+        parser.print_help()
+        return
+    
+    # Initialize app
+    app = SignalGeneratorApp(args.symbol)
+    app.initialize()
+    
+    # Generate or monitor
+    if args.monitor:
+        app.monitor(args.interval)
+    else:
+        app.generate_signals(args.timeframe)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-
