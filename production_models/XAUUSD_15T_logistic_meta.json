@@ -3,11 +3,11 @@
     "symbol": "XAUUSD",
     "timeframe": "15T",
     "model_type": "logistic",
-    "created_at": "2025-11-18T20:33:05.650680",
+    "created_at": "2025-11-20T20:42:09.126510",
     "version": "V2.2"
   },
   "trading_params": {
-    "confidence_threshold": 0.7,
+    "confidence_threshold": 0.75,
     "tp_multiplier": 1.2,
     "sl_multiplier": 1.0,
     "time_barrier_bars": 40,
@@ -117,16 +117,16 @@
     ]
   },
   "performance": {
-    "pre_cost_pf": 0.962832986030333,
-    "post_cost_pf": 0.8785737977229563,
-    "win_rate": 0.690685142417244,
-    "profit_factor": 2.4460673238298245,
-    "sharpe_ratio": 37.21429717377299,
-    "max_drawdown_pct": 0.026653891945711664,
-    "max_drawdown_r": 80.75000000002547,
-    "total_trades": 6495,
-    "mean_r": 0.46945747878472205,
-    "total_r": 3049.1263247067695
+    "pre_cost_pf": 0.9630299004825958,
+    "post_cost_pf": 0.8787508884520808,
+    "win_rate": 0.6708625670656211,
+    "profit_factor": 2.2318510734238677,
+    "sharpe_ratio": 0.4118299528132375,
+    "max_drawdown_pct": 0.04194694152298348,
+    "max_drawdown_r": 87.34999999998172,
+    "total_trades": 4846,
+    "mean_r": 0.42572071506740045,
+    "total_r": 2063.0425852166227
   },
   "risk_filters": {
     "bad_regimes": [],
@@ -137,6 +137,6 @@
     "load_pkl": "import pickle; data = pickle.load(open('XAUUSD_15T_logistic.pkl', 'rb'))",
     "load_onnx": "import onnxruntime; session = onnxruntime.InferenceSession('XAUUSD_15T_logistic.onnx')",
     "inference": "predictions = model.predict_proba(scaler.transform(features))[:, 1]",
-    "filter_signal": "take_trade = (prediction >= 0.70)"
+    "filter_signal": "take_trade = (prediction >= 0.75)"
   }
 }
