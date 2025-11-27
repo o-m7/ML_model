@@ -1,0 +1,114 @@
+# Feature Extraction Configuration
+
+# Data paths
+paths:
+  polygon_s3: "~/polygon_s3_data"  # Adjust to your Polygon S3 mount/download location
+  output_base: "ML_model/ML_model/feature_store"
+
+# Symbols to process
+symbols:
+  - XAUUSD
+  - XAGUSD
+
+# Date range
+date_range:
+  start: "2020-01-01"
+  end: "2025-11-17"
+
+# Timeframes to generate
+timeframes:
+  - 1T    # 1 minute
+  - 5T    # 5 minutes
+  - 15T   # 15 minutes
+  - 1H    # 1 hour
+  - 4H    # 4 hours
+
+# Technical indicator parameters
+indicators:
+  # Volatility
+  atr_period: 14
+  
+  # Momentum
+  rsi_period: 14
+  roc_periods: [5, 10, 20]
+  
+  # MACD
+  macd_fast: 12
+  macd_slow: 26
+  macd_signal: 9
+  
+  # Bollinger Bands
+  bb_period: 20
+  bb_std: 2.0
+  
+  # Trend
+  adx_period: 14
+  
+  # Stochastic
+  stoch_k: 14
+  stoch_d: 3
+  
+  # Moving averages
+  ema_periods: [5, 10, 20, 50, 100, 200]
+  sma_periods: [5, 10, 20, 50, 100, 200]
+  
+  # Volume
+  volume_sma_period: 20
+  obv_ema_period: 20
+
+# Multi-timeframe feature cascade
+# For each timeframe, specify which higher TFs to merge features from
+mtf_cascade:
+  1T: [5T, 15T]
+  5T: [15T, 1H]
+  15T: [1H, 4H]
+  1H: [4H]
+  4H: []
+
+# Features to cascade from higher timeframes
+mtf_features:
+  - close
+  - atr
+  - rsi
+  - adx
+  - ema_20
+  - ema_50
+  - bb_width
+  - realized_vol
+
+# Data quality thresholds
+validation:
+  min_rows: 1000
+  max_nan_pct: 0.05  # 5% max NaNs allowed
+  min_volume: 0  # Minimum volume per bar
+  max_spread_atr_ratio: 10.0  # Flag bars with spread > 10x ATR
+
+# Feature lag settings (CRITICAL for causality)
+lag:
+  enabled: true
+  periods: 1  # Number of bars to shift features
+  exclude_from_lag:
+    - timestamp
+    - open
+    - high
+    - low
+    - close
+    - volume
+
+# Session times (UTC)
+sessions:
+  asian:
+    start: 0
+    end: 8
+  london:
+    start: 8
+    end: 16
+  ny:
+    start: 13
+    end: 21
+
+# Output settings
+output:
+  compression: "snappy"
+  save_quotes_separately: true
+  save_intermediate: false  # Save intermediate steps (minute bars, pre-lag features)

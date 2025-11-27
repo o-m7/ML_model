@@ -1,0 +1,529 @@
+"""
+Polygon.io Real-Time Data Connector via Massive.com
+=====================================================
+
+WebSocket client for streaming market data using the official Massive.com client.
+Supports: Second aggregates (CAS), Quotes (C), Minute aggregates (CA), FMV (FMV)
+
+Documentation: https://massive.com
+"""
+
+import asyncio
+import logging
+from typing import Callable, Optional, List
+from datetime import datetime, timezone
+
+import pandas as pd
+
+# Import Massive client (official Polygon WebSocket)
+from massive import WebSocketClient
+from massive.websocket.models import WebSocketMessage, Feed, Market
+
+from live_signal_engine import Config, AggBar, Quote
+
+logger = logging.getLogger(__name__)
+
+
+class PolygonWebSocketClient:
+    """Real-time WebSocket client using Massive.com official client"""
+    
+    def __init__(
+        self,
+        api_key: str,
+        symbol: str = "XAU/USD",  # Massive format: XAU/USD (not C:XAUUSD)
+        on_agg_callback: Optional[Callable] = None,
+        on_quote_callback: Optional[Callable] = None,
+        channel_type: str = "minute",  # minute, second, quotes, fmv
+    ):
+        """
+        Args:
+            api_key: Massive API key
+            symbol: Trading symbol in Massive format (e.g., 'XAU/USD')
+            on_agg_callback: Called when aggregate arrives
+            on_quote_callback: Called when quote arrives
+            channel_type: Type of data - 'minute' (CA), 'second' (CAS), 'quotes' (C), 'fmv' (FMV)
+        """
+        self.api_key = api_key
+        self.symbol = symbol
+        self.on_agg_callback = on_agg_callback
+        self.on_quote_callback = on_quote_callback
+        self.channel_type = channel_type
+        self.is_connected = False
+        self.client = None
+    
+    async def connect(self) -> None:
+        """Connect to Massive WebSocket."""
+        if not self.api_key:
+            raise ValueError("API key required")
+        
+        logger.info(f"Connecting to Massive WebSocket ({self.symbol}, {self.channel_type})...")
+        
+        try:
+            # Initialize Massive WebSocketClient
+            self.client = WebSocketClient(
+                api_key=self.api_key,
+                feed=Feed.RealTime,
+                market=Market.Forex,
+            )
+            
+            logger.info("✓ Massive WebSocket client initialized")
+            
+            # Subscribe to appropriate channel based on type
+            if self.channel_type == "minute":
+                channel = f"CA.{self.symbol}"  # Minute aggregates
+            elif self.channel_type == "second":
+                channel = f"CAS.{self.symbol}"  # Second aggregates
+            elif self.channel_type == "quotes":
+                channel = f"C.{self.symbol}"  # Quotes
+            elif self.channel_type == "fmv":
+                channel = f"FMV.{self.symbol}"  # Fair Market Value
+            else:
+                raise ValueError(f"Unknown channel_type: {self.channel_type}")
+            
+            logger.info(f"Subscribing to: {channel}")
+            self.client.subscribe(channel)
+            
+            # Connect with message processor
+            logger.info("✓ Connecting to WebSocket...")
+            self.client.run(self._process_message)
+            
+            self.is_connected = True
+            logger.info("✓ Connected to Massive WebSocket")
+        
+        except Exception as e:
+            logger.error(f"WebSocket connection error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            self.is_connected = False
+            raise
+    
+    def _process_message(self, messages: List[WebSocketMessage]) -> None:
+        """Process incoming WebSocket messages.
+        
+        Massive sends WebSocketMessage objects with specific types.
+        """
+        try:
+            if not isinstance(messages, list):
+                messages = [messages]
+            
+            for msg in messages:
+                # Route based on channel type
+                if self.channel_type in ["minute", "second"]:
+                    self._handle_aggregate(msg)
+                elif self.channel_type == "quotes":
+                    self._handle_quote(msg)
+                elif self.channel_type == "fmv":
+                    self._handle_fmv(msg)
+        
+        except Exception as e:
+            logger.error(f"Error processing message: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def _handle_aggregate(self, msg: WebSocketMessage) -> None:
+        """Process aggregate (minute or second) message."""
+        try:
+            # WebSocketMessage has these attributes for aggregates:
+            # symbol, open, high, low, close, volume, timestamp, etc.
+            
+            symbol = getattr(msg, 'symbol', None)
+            o = getattr(msg, 'open', None)
+            h = getattr(msg, 'high', None)
+            l = getattr(msg, 'low', None)
+            c = getattr(msg, 'close', None)
+            v = getattr(msg, 'volume', None)
+            ts_ms = getattr(msg, 'timestamp', None)
+            
+            if None in [symbol, o, h, l, c, ts_ms]:
+                logger.debug(f"Incomplete aggregate: {msg}")
+                return
+            
+            # Convert timestamp
+            if isinstance(ts_ms, int):
+                if ts_ms > 1e15:  # Nanoseconds
+                    ts = pd.Timestamp(ts_ms, unit='ns', tz='UTC')
+                else:  # Milliseconds
+                    ts = pd.Timestamp(ts_ms, unit='ms', tz='UTC')
+            else:
+                ts = pd.Timestamp(ts_ms, tz='UTC')
+            
+            # Create normalized bar (use same timestamp for start/end for tick data)
+            agg = AggBar(
+                symbol=symbol,
+                o=float(o),
+                h=float(h),
+                l=float(l),
+                c=float(c),
+                v=float(v) if v else 0.0,
+                start_ts=ts,
+                end_ts=ts,
+            )
+            
+            # Invoke callback
+            if self.on_agg_callback:
+                self.on_agg_callback(agg)
+            
+            logger.debug(f"✓ Agg: {symbol} @ {ts.strftime('%H:%M:%S')} "
+                        f"OHLCV={o:.2f},{h:.2f},{l:.2f},{c:.2f},{v:.0f if v else 0}")
+        
+        except Exception as e:
+            logger.error(f"Error processing aggregate: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def _handle_quote(self, msg: WebSocketMessage) -> None:
+        """Process quote message."""
+        try:
+            # WebSocketMessage has these attributes for quotes:
+            # symbol, bid, ask, timestamp, etc.
+            
+            symbol = getattr(msg, 'symbol', None)
+            bid = getattr(msg, 'bid', None) or getattr(msg, 'bid_price', None)
+            ask = getattr(msg, 'ask', None) or getattr(msg, 'ask_price', None)
+            ts_ms = getattr(msg, 'timestamp', None)
+            
+            if None in [symbol, bid, ask, ts_ms]:
+                logger.debug(f"Incomplete quote: {msg}")
+                return
+            
+            # Convert timestamp
+            if isinstance(ts_ms, int):
+                if ts_ms > 1e15:  # Nanoseconds
+                    ts = pd.Timestamp(ts_ms, unit='ns', tz='UTC')
+                else:  # Milliseconds
+                    ts = pd.Timestamp(ts_ms, unit='ms', tz='UTC')
+            else:
+                ts = pd.Timestamp(ts_ms, tz='UTC')
+            
+            # Create normalized quote
+            quote = Quote(
+                symbol=symbol,
+                bid=float(bid),
+                ask=float(ask),
+                ts=ts,
+            )
+            
+            # Invoke callback
+            if self.on_quote_callback:
+                self.on_quote_callback(quote)
+            
+            spread = ask - bid
+            logger.debug(f"✓ Quote: {symbol} @ {ts.strftime('%H:%M:%S')} "
+                        f"Bid={bid:.4f} Ask={ask:.4f} Spread={spread:.4f}")
+        
+        except Exception as e:
+            logger.error(f"Error processing quote: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+    
+    def _handle_fmv(self, msg: WebSocketMessage) -> None:
+        """Process Fair Market Value message."""
+        try:
+            symbol = getattr(msg, 'symbol', None)
+            value = getattr(msg, 'value', None)
+            ts_ms = getattr(msg, 'timestamp', None)
+            
+            if None in [symbol, value, ts_ms]:
+                logger.debug(f"Incomplete FMV: {msg}")
+                return
+            
+            logger.debug(f"FMV: {symbol} = {value}")
+        
+        except Exception as e:
+            logger.error(f"Error processing FMV: {e}")
+
+
+class PolygonRESTClient:
+    """Fast REST API client using Massive.com for quotes and OHLCV data"""
+    
+    def __init__(self, api_key: str, symbol: str = "XAU/USD"):
+        """
+        Args:
+            api_key: Massive API key
+            symbol: Trading symbol in Massive format (e.g., 'XAU/USD')
+        """
+        self.api_key = api_key
+        self.symbol = symbol
+    
+    def get_current_quote(self) -> Optional[Quote]:
+        """Get latest quote (bid/ask) quickly."""
+        try:
+            from massive import RESTClient
+            
+            client = RESTClient(self.api_key)
+            
+            # Get 1 latest quote
+            quotes = list(client.list_quotes(
+                ticker=f"C:{self.symbol}",
+                order="desc",
+                limit=1,
+            ))
+            
+            if not quotes:
+                logger.debug(f"No quotes available")
+                return None
+            
+            q = quotes[0]
+            
+            bid = float(q.bid_price) if hasattr(q, 'bid_price') else None
+            ask = float(q.ask_price) if hasattr(q, 'ask_price') else None
+            ts_ms = q.timestamp if hasattr(q, 'timestamp') else None
+            
+            if None in [bid, ask, ts_ms]:
+                return None
+            
+            if ts_ms > 1e15:
+                ts = pd.Timestamp(ts_ms, unit='ns', tz='UTC')
+            else:
+                ts = pd.Timestamp(ts_ms, unit='ms', tz='UTC')
+            
+            quote = Quote(
+                symbol=self.symbol,
+                bid=bid,
+                ask=ask,
+                ts=ts,
+            )
+            
+            logger.info(f"✓ Quote: {self.symbol} Bid={bid:.4f} Ask={ask:.4f}")
+            return quote
+        
+        except Exception as e:
+            logger.error(f"Quote error: {e}")
+            return None
+        self._massive_client = None  # Lazy load
+    
+    def _get_massive_client(self):
+        """Lazy-load Massive client only when needed."""
+        if self._massive_client is None:
+            try:
+                from massive import RESTClient
+                self._massive_client = RESTClient(self.api_key)
+            except ImportError:
+                return None
+        return self._massive_client
+    
+    def get_current_quote(self) -> Optional[Quote]:
+        """Get latest quote (bid/ask) via REST API.
+        
+        Tries Massive client first (C:XAU-USD), falls back to snapshot (C:XAUUSD).
+        Returns quickly - uses fastest available method.
+        
+        Returns:
+            Quote object with current bid/ask spread, or None on error
+        """
+        import requests
+        import asyncio
+        from concurrent.futures import ThreadPoolExecutor
+        
+        # Try both methods in parallel and return whichever completes first
+        def try_massive():
+            try:
+                client = self._get_massive_client()
+                if not client:
+                    return None
+                
+                quotes = list(client.list_quotes(
+                    ticker=self.symbol_massive,
+                    order="desc",
+                    limit=1,
+                ))
+                
+                if not quotes:
+                    return None
+                
+                quote_obj = quotes[0]
+                bid = quote_obj.bid_price if hasattr(quote_obj, 'bid_price') else None
+                ask = quote_obj.ask_price if hasattr(quote_obj, 'ask_price') else None
+                ts_ms = quote_obj.timestamp if hasattr(quote_obj, 'timestamp') else None
+                
+                if None in [bid, ask, ts_ms]:
+                    return None
+                
+                if ts_ms > 1e15:  # Nanoseconds
+                    ts = pd.Timestamp(ts_ms, unit='ns', tz='UTC')
+                else:  # Milliseconds
+                    ts = pd.Timestamp(ts_ms, unit='ms', tz='UTC')
+                
+                return Quote(symbol=self.symbol_ohlcv, bid=float(bid), ask=float(ask), ts=ts)
+            except:
+                return None
+        
+        def try_snapshot():
+            try:
+                url = f"{self.base_url}/v2/snapshot/locale/global/markets/forex/tickers/{self.symbol_ohlcv}"
+                response = requests.get(url, params={"apiKey": self.api_key}, timeout=5)
+                
+                if response.status_code != 200:
+                    return None
+                
+                data = response.json()
+                ticker_data = data.get("ticker", {})
+                bid = ticker_data.get("lastBid")
+                ask = ticker_data.get("lastAsk")
+                ts_ms = ticker_data.get("lastUpdated")
+                
+                if None in [bid, ask, ts_ms]:
+                    return None
+                
+                ts = pd.Timestamp(ts_ms, unit='ms', tz='UTC')
+                return Quote(symbol=self.symbol_ohlcv, bid=float(bid), ask=float(ask), ts=ts)
+            except:
+                return None
+        
+        # Try snapshot first (usually faster)
+        quote = try_snapshot()
+        if quote:
+            spread = quote.ask - quote.bid
+            logger.info(f"✓ Quote: {self.symbol_ohlcv} Bid={quote.bid:.4f} Ask={quote.ask:.4f} Spread={spread:.4f}")
+            return quote
+        
+        # Fallback to Massive if snapshot failed
+        quote = try_massive()
+        if quote:
+            spread = quote.ask - quote.bid
+            logger.info(f"✓ Quote (Massive): {self.symbol_massive} → {self.symbol_ohlcv} Bid={quote.bid:.4f} Ask={quote.ask:.4f}")
+            return quote
+        
+        return None
+    
+    def get_previous_bar(self) -> Optional[AggBar]:
+        """Get previous close (daily bar) via REST API.
+        
+        Note: Aggregate endpoints use C:XAUUSD format (no hyphen)
+        
+        Returns:
+            AggBar object with previous day's OHLCV, or None on error
+        """
+        import requests
+        
+        try:
+            # Endpoint: /v2/aggs/ticker/{symbol}/prev
+            url = f"{self.base_url}/v2/aggs/ticker/{self.symbol_ohlcv}/prev"
+            params = {"apiKey": self.api_key}
+            
+            response = requests.get(url, params=params, timeout=5)
+            if response.status_code != 200:
+                logger.error(f"REST bar error: {response.status_code}")
+                return None
+            
+            data = response.json()
+            results = data.get("results", [])
+            
+            if not results:
+                logger.debug("No bar data available")
+                return None
+            
+            bar_data = results[0]
+            
+            # Extract OHLCV
+            o = bar_data.get("o")
+            h = bar_data.get("h")
+            l = bar_data.get("l")
+            c = bar_data.get("c")
+            v = bar_data.get("v")
+            t_ms = bar_data.get("t")
+            
+            if None in [o, h, l, c, v, t_ms]:
+                logger.debug(f"Incomplete bar data: {bar_data}")
+                return None
+            
+            # For daily bar, use same timestamp for start and end
+            ts = pd.Timestamp(t_ms, unit='ms', tz='UTC')
+            
+            # Create bar
+            agg = AggBar(
+                symbol=self.symbol_ohlcv,
+                o=float(o),
+                h=float(h),
+                l=float(l),
+                c=float(c),
+                v=float(v),
+                start_ts=ts,
+                end_ts=ts,
+            )
+            
+            logger.info(f"✓ Previous Bar: {self.symbol_ohlcv} @ {ts.strftime('%Y-%m-%d')} OHLCV={o:.2f},{h:.2f},{l:.2f},{c:.2f},{v:.0f}")
+            return agg
+        
+        except Exception as e:
+            logger.error(f"REST bar error: {e}")
+            return None
+    
+    def get_todays_bar(self) -> Optional[AggBar]:
+        """Get today's open-close bar via REST API.
+        
+        Returns:
+            AggBar object with today's OHLCV, or None on error (market closed)
+        """
+        import requests
+        from datetime import datetime
+        
+        try:
+            # Endpoint: /v1/open-close/{symbol}/{date}
+            today = datetime.utcnow().strftime("%Y-%m-%d")
+            url = f"{self.base_url}/v1/open-close/{self.symbol_ohlcv}/{today}"
+            params = {"apiKey": self.api_key}
+            
+            response = requests.get(url, params=params, timeout=5)
+            if response.status_code != 200:
+                # 404 likely means no data for today (market closed)
+                logger.debug(f"No data for today: {response.status_code}")
+                return None
+            
+            data = response.json()
+            status = data.get("status")
+            
+            if status != "OK":
+                logger.debug(f"Bad status: {status}")
+                return None
+            
+            # Extract OHLCV
+            o = data.get("open")
+            h = data.get("high")
+            l = data.get("low")
+            c = data.get("close")
+            v = data.get("volume")
+            
+            if None in [o, h, l, c]:
+                logger.debug(f"Incomplete today data: {data}")
+                return None
+            
+            # Create timestamp for today
+            ts = pd.Timestamp(today, tz='UTC')
+            
+            # Create bar
+            agg = AggBar(
+                symbol=self.symbol_ohlcv,
+                o=float(o),
+                h=float(h),
+                l=float(l),
+                c=float(c),
+                v=float(v) if v else 0.0,
+                start_ts=ts,
+                end_ts=ts,
+            )
+            
+            logger.info(f"✓ Today's Bar: {self.symbol_ohlcv} @ {today} OHLCV={o:.2f},{h:.2f},{l:.2f},{c:.2f},{v if v else 'N/A'}")
+            return agg
+        
+        except Exception as e:
+            logger.debug(f"REST today bar (expected if market closed): {e}")
+            return None
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    
+    async def test():
+        def on_agg(agg):
+            print(f"Received agg: {agg}")
+        
+        client = PolygonWebSocketClient(
+            api_key=Config.POLYGON_API_KEY,
+            symbol="XAUUSD",
+            on_agg_callback=on_agg,
+        )
+        
+        await client.connect()
+    
+    asyncio.run(test())

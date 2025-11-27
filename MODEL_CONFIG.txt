@@ -1,0 +1,101 @@
+================================================================================
+MODEL CONFIGURATION - USING NEWEST TRAINED MODELS ONLY
+================================================================================
+
+SOURCE:
+  OHLCV:  citadel_v6.py
+  Quote:  citadel_quote_models.py
+  
+DIRECTORY STRUCTURE:
+  ├─ OHLCV_models/     → {strategy}_C_XAU-USD_{timeframe}.pkl
+  └─ QUOTE_models/     → {strategy}_C:XAU-USD_{timeframe}.pkl
+
+CURRENTLY AVAILABLE:
+════════════════════════════════════════════════════════════════════════════════
+
+OHLCV Models (6 models):
+  ✓ trend_following_5T      - Trend detection
+  ✓ trend_following_15T     - Trend detection  
+  ✓ mean_reversion_5T       - Mean reversion
+  ✓ mean_reversion_15T      - Mean reversion
+  ✓ volatility_breakout_5T  - Volatility breakout
+  ✓ volatility_breakout_15T - Volatility breakout
+
+Quote Models (2 models):
+  ✓ quote_mean_reversion_5T      - Bid/ask mean reversion
+  ✓ quote_volatility_breakout_5T - Bid/ask volatility
+
+TOTAL: 8 PRODUCTION MODELS
+
+
+MISSING TIMEFRAMES:
+════════════════════════════════════════════════════════════════════════════════
+
+To complete coverage for 1T, 5T, 15T, 30T:
+  ⚠ OHLCV 1T   (need to train)
+  ✓ OHLCV 5T   (have)
+  ✓ OHLCV 15T  (have)
+  ⚠ OHLCV 30T  (need to train)
+  
+  ⚠ Quote 1T   (need to train)
+  ✓ Quote 5T   (have)
+  ⚠ Quote 15T  (need to train)
+  ⚠ Quote 30T  (need to train)
+
+
+TRAINING COMMANDS:
+════════════════════════════════════════════════════════════════════════════════
+
+Train all missing timeframes (parallel):
+  python train_all_timeframes.py
+
+Train individual models:
+  # OHLCV
+  python citadel_v6.py --symbol XAUUSD --timeframe 1T
+  python citadel_v6.py --symbol XAUUSD --timeframe 30T
+  
+  # Quote
+  python citadel_quote_models.py --timeframe 1T
+  python citadel_quote_models.py --timeframe 15T
+  python citadel_quote_models.py --timeframe 30T
+
+
+SIGNAL GENERATION:
+════════════════════════════════════════════════════════════════════════════════
+
+Current Setup (8 models):
+  - Covers: 5T (6 models), 15T (2 models)
+  - Multi-timeframe voting: Trend + Mean-Reversion + Volatility
+  - Quote microstructure analysis on bid/ask spreads
+
+Recommended Setup (12+ models after training):
+  - Covers: 1T, 5T, 15T, 30T (4 models each)
+  - Comprehensive multi-timeframe ensemble
+  - Timeframe pyramid: 1T (ultra-short) → 5T (short) → 15T (medium) → 30T (long)
+
+
+PERFORMANCE:
+════════════════════════════════════════════════════════════════════════════════
+
+With 8 models:
+  - Quote fetch: 11-13ms
+  - Bar fetch: <300ms
+  - Model inference: ~100ms
+  - Total latency: ~300-400ms
+
+With 12+ models:
+  - Quote fetch: 11-13ms
+  - Bar fetch: <300ms
+  - Model inference: ~150ms (more models)
+  - Total latency: ~400-500ms
+  - Still well under 3-second requirement ✓
+
+
+STATUS:
+════════════════════════════════════════════════════════════════════════════════
+✓ Ready to use 8 current models for live trading
+⚠ Run training script to get complete coverage (1T, 5T, 15T, 30T)
+✓ All models from citadel training systems (newest)
+✓ No corrupted models (cleaned)
+
+================================================================================

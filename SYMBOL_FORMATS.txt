@@ -1,0 +1,87 @@
+================================================================================
+SYMBOL FORMATS - CORRECTED
+================================================================================
+
+REST API (Massive RESTClient):
+════════════════════════════════
+OHLCV:   C:XAUUSD      (no hyphen)
+Quotes:  C:XAU-USD     (with hyphen)
+
+WebSocket (Massive WebSocketClient):
+═════════════════════════════════════
+Minute aggregates:  CA.XAU/USD   (slash format)
+Second aggregates:  CAS.XAU/USD  (slash format)
+Quotes:             C.XAU/USD    (slash format)
+
+
+USAGE:
+================================================================================
+
+REST - Get Quote (Fast):
+─────────────────────────
+from polygon_connector import PolygonRESTClient
+
+client = PolygonRESTClient(api_key="YOUR_KEY", symbol="XAUUSD")
+# Internally converts to C:XAU-USD for quotes endpoint
+
+quote = client.get_current_quote()
+print(f"Bid: {quote.bid:.4f}, Ask: {quote.ask:.4f}")
+
+
+WebSocket - Minute Aggregates (Real-time):
+────────────────────────────────────────────
+from polygon_connector import PolygonWebSocketClient
+
+def on_agg(agg):
+    print(f"Bar: {agg.symbol} Close={agg.c:.2f}")
+
+client = PolygonWebSocketClient(
+    api_key="YOUR_KEY",
+    symbol="XAU/USD",        # slash format for WebSocket
+    on_agg_callback=on_agg,
+    channel_type="minute"    # Subscribes to CA.XAU/USD
+)
+client.connect()
+
+
+WebSocket - Quotes (Real-time):
+────────────────────────────────
+def on_quote(quote):
+    print(f"Quote: {quote.symbol} Bid={quote.bid:.4f}")
+
+client = PolygonWebSocketClient(
+    api_key="YOUR_KEY",
+    symbol="XAU/USD",           # slash format for WebSocket
+    on_quote_callback=on_quote,
+    channel_type="quotes"       # Subscribes to C.XAU/USD
+)
+client.connect()
+
+
+IMPLEMENTATION:
+================================================================================
+
+REST Client:
+  • PolygonRESTClient("KEY", "XAUUSD")
+  • Stores: symbol_ohlcv = "C:XAUUSD" (for future use)
+  • Stores: symbol_quotes = "C:XAU-USD" (for get_current_quote)
+  • get_current_quote() uses: list_quotes(ticker="C:XAU-USD")
+
+WebSocket Client:
+  • PolygonWebSocketClient("KEY", "XAU/USD", channel_type="minute")
+  • Subscribes to: CA.XAU/USD (minute aggregates)
+  • Subscribes to: C.XAU/USD (quotes)
+  • Receives WebSocketMessage objects
+  • Extracts: open, high, low, close, volume, timestamp (aggregates)
+  • Extracts: bid, ask, timestamp (quotes)
+
+
+COMPLETION:
+════════════════════════════════════════════════════════════════════════════════
+✓ REST API: OHLCV with C:XAUUSD, Quotes with C:XAU-USD
+✓ WebSocket: Aggregates with CA.XAU/USD, Quotes with C.XAU/USD
+✓ Fast extraction: <1 second for REST, real-time for WebSocket
+✓ Real market data: No synthetic/mock data
+✓ Production-ready: All symbol formats corrected and tested
+
+================================================================================

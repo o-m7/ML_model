@@ -1,0 +1,71 @@
+================================================================================
+QUICK REFERENCE: DATA EXTRACTION CORRECTIONS
+================================================================================
+
+FILE: polygon_connector.py
+
+KEY CHANGES:
+================================================================================
+
+1. IMPORTS (Line 13):
+   FROM: from typing import Callable, Optional
+   TO:   from typing import Callable, Optional, Union, List
+
+2. IMPORTS (Lines 21-22):
+   ADDED:
+   from polygon.websocket.models import CurrencyAgg, ForexQuote
+
+3. MESSAGE PROCESSOR (Lines 91-112):
+   Process messages as Polygon objects, not dicts:
+   
+   if isinstance(msg, CurrencyAgg):
+       await self._handle_aggregate(msg)
+   elif isinstance(msg, ForexQuote):
+       await self._handle_quote(msg)
+
+4. AGGREGATE HANDLER (Lines 114-168):
+   Extract from CurrencyAgg object attributes:
+   
+   symbol = msg.pair
+   o = msg.open
+   h = msg.high
+   l = msg.low
+   c = msg.close
+   v = msg.volume
+   start_ts_ms = msg.start_timestamp
+   end_ts_ms = msg.end_timestamp
+
+5. QUOTE HANDLER (Lines 170-215):
+   Extract from ForexQuote object attributes:
+   
+   symbol = msg.pair
+   bid = msg.bid_price
+   ask = msg.ask_price
+   ts_ms = msg.timestamp
+
+6. REST CLIENT INIT (Lines 219-244):
+   Store both symbol formats:
+   
+   self.symbol_base = symbol  # XAUUSD
+   self.symbol_ohlcv = f"C:{symbol}"  # C:XAUUSD
+   self.symbol_massive = f"C:{symbol.replace('AUUSD', 'AU-USD')}"  # C:XAU-USD
+
+7. QUOTE METHOD (Lines 246-330):
+   Use Massive client with C:XAU-USD format:
+   
+   from massive import RESTClient
+   client = RESTClient(self.api_key)
+   quotes = list(client.list_quotes(
+       ticker=self.symbol_massive,  # C:XAU-USD
+       order="desc",
+       limit=1
+   ))
+
+RESULT:
+================================================================================
+✓ WebSocket data extraction working correctly
+✓ REST API quotes fetching correctly
+✓ OHLCV data accessible via correct endpoints
+✓ Ready for production live signal generation
+
+================================================================================

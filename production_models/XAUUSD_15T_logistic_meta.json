@@ -3,18 +3,18 @@
     "symbol": "XAUUSD",
     "timeframe": "15T",
     "model_type": "logistic",
-    "created_at": "2025-11-20T20:42:09.126510",
-    "version": "V2.2"
+    "created_at": "2025-11-24T15:45:05.994708",
+    "version": "V3.0"
   },
   "trading_params": {
-    "confidence_threshold": 0.75,
+    "confidence_threshold": 0.85,
     "tp_multiplier": 1.2,
     "sl_multiplier": 1.0,
     "time_barrier_bars": 40,
-    "spread_cost_r": 0.05
+    "spread_cost_r": 0.06
   },
   "features": {
-    "count": 98,
+    "count": 127,
     "names": [
       "returns",
       "atr",
@@ -82,6 +82,26 @@
       "4H_ema_20",
       "4H_ema_50",
       "4H_bb_width",
+      "mid_close",
+      "spread",
+      "bid_close",
+      "ask_close",
+      "mid_open",
+      "bid_open",
+      "ask_open",
+      "mid_high",
+      "bid_high",
+      "ask_high",
+      "mid_low",
+      "bid_low",
+      "ask_low",
+      "spread_pct",
+      "close_vs_mid",
+      "bid_ask_imbalance",
+      "spread_vs_atr",
+      "volume_quote",
+      "transactions_quote",
+      "vwap_quote",
       "regime_vol_percentile",
       "regime_vol",
       "regime_trend_20_50",
@@ -113,30 +133,44 @@
       "micro_volume_surge",
       "micro_volume_anomaly",
       "micro_gap",
-      "micro_gap_pct"
+      "micro_gap_pct",
+      "body",
+      "upper_wick",
+      "lower_wick",
+      "total_range",
+      "last_swing_high",
+      "last_swing_low",
+      "liq_sweep_bullish",
+      "liq_sweep_bearish",
+      "liq_sweep_any"
     ]
   },
   "performance": {
-    "pre_cost_pf": 0.9630299004825958,
-    "post_cost_pf": 0.8787508884520808,
-    "win_rate": 0.6708625670656211,
-    "profit_factor": 2.2318510734238677,
-    "sharpe_ratio": 0.4118299528132375,
-    "max_drawdown_pct": 0.04194694152298348,
-    "max_drawdown_r": 87.34999999998172,
-    "total_trades": 4846,
-    "mean_r": 0.42572071506740045,
-    "total_r": 2063.0425852166227
+    "pre_cost_pf": 0.9367987094143124,
+    "post_cost_pf": 0.8393003534600507,
+    "win_rate": 0.8591954022988506,
+    "profit_factor": 6.562572198690795,
+    "sharpe_ratio": 1.0849788970369227,
+    "max_drawdown_pct": 6.634397713139864,
+    "max_drawdown_r": 375390.40700543846,
+    "total_trades": 1392,
+    "mean_r": 0.8302298850574712,
+    "total_r": 1155.6799999999998,
+    "max_consecutive_losses": 7,
+    "avg_consecutive_losses": 1.7345132743362832
   },
   "risk_filters": {
     "bad_regimes": [],
     "bad_regime_wr_threshold": 0.5,
-    "bad_regime_pf_threshold": 1.0
+    "bad_regime_pf_threshold": 1.0,
+    "max_consecutive_losses": 8,
+    "max_trades_per_day": 10,
+    "adaptive_risk_enabled": true
   },
   "usage": {
     "load_pkl": "import pickle; data = pickle.load(open('XAUUSD_15T_logistic.pkl', 'rb'))",
     "load_onnx": "import onnxruntime; session = onnxruntime.InferenceSession('XAUUSD_15T_logistic.onnx')",
     "inference": "predictions = model.predict_proba(scaler.transform(features))[:, 1]",
-    "filter_signal": "take_trade = (prediction >= 0.75)"
+    "filter_signal": "take_trade = (prediction >= 0.85)"
   }
 }

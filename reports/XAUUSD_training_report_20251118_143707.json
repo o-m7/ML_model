@@ -1,0 +1,19 @@
+{
+  "symbol": "XAUUSD",
+  "timestamp": "20251118_143707",
+  "training_date": "2025-11-18T14:42:02.872147",
+  "timeframes": {
+    "5T": {
+      "model": "logistic",
+      "threshold": 0.7,
+      "base_pf": 1.3,
+      "filtered_metrics": {
+        "win_rate": 0.6265986982841018,
+        "profit_factor": 1.2626644924339288,
+        "sharpe": 17.147026454001118,
+        "max_drawdown_pct": 0.22026907645488433,
+        "total_trades": 21971
+      },
+      "bad_regimes": [],
+      "passes_targets": {
+        "win_rate_ok": 

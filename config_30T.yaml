@@ -1,0 +1,80 @@
+# Configuration for 30-minute (30T) timeframe trading
+
+paths:
+  base: "/Users/omar/Desktop/ML_model/ML_model/feature_store"
+  output: "./output/xauusd_30T_models/"
+  
+data:
+  symbol: "XAUUSD"
+  primary_timeframe: "30T"
+  secondary_timeframes: ["1H", "4H"]  # Higher timeframes for regime context
+  
+labeling:
+  method: "triple_barrier"
+  take_profit_atr_multiples: [1.5, 2.0, 3.0]  # Can use wider targets on 30T
+  stop_loss_atr_multiple: 1.0
+  time_barrier_bars: 16  # 8 hours max holding = 16 x 30-min bars
+  min_return_threshold: 0.0001  # 1 bps
+  
+features:
+  lag_bars: 1
+  correlation_threshold: 0.95
+  missing_threshold: 0.05
+  fractional_diff_order: 0.4
+  
+validation:
+  method: "walk_forward"
+  train_months: 5  # Longer window for 30T (cleaner signals)
+  val_months: 1
+  test_months: 1
+  roll_forward_months: 1
+  min_trades_per_fold: 60
+  
+models:
+  train:
+    - "lightgbm"
+    - "xgboost"
+    - "catboost"
+  ensemble_top_k: 3
+  
+hyperparameter_tuning:
+  method: "optuna"
+  n_trials: 50
+  cv_folds: 3
+  objective_weights:
+    profit_factor: 0.4
+    sharpe: 0.3
+    drawdown: 0.3
+  early_stopping_rounds: 50
+  
+performance_targets:
+  profit_factor_min: 1.6  # Higher targets for 30T (less noise)
+  win_rate_min: 0.50
+  win_rate_max: 0.60
+  max_drawdown_pct: 6.0  # Tighter control on 30T
+  sharpe_min: 0.25
+  r_multiple_min: 1.2
+  min_trades_test: 120
+  
+risk_management:
+  position_sizing:
+    method: "atr_scaled"
+    risk_per_trade_pct: 0.7  # Higher risk for cleaner 30T signals
+    kelly_fraction_cap: 0.25
+  execution_filters:
+    min_confidence: 0.45  # Lower threshold OK on 30T
+    max_spread_atr_ratio: 0.30
+    max_volatility_zscore: 3.0
+    blackout_sessions: []
+  
+deployment:
+  export_onnx: true
+  export_mlflow: false
+  model_version: "v1.0_30T"
+  
+logging:
+  level: "INFO"
+  track_experiments: true
+  save_intermediate: true
+
+random_seed: 42

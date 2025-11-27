@@ -1,0 +1,354 @@
+[
+  {
+    "segment": 1,
+    "train_size": 8244,
+    "test_size": 5854,
+    "threshold": 0.5147003330374657,
+    "metrics": {
+      "total_trades": 610,
+      "win_rate": 0.372,
+      "profit_factor": 0.675,
+      "sharpe_ratio": -0.215,
+      "max_drawdown_pct": 0.902,
+      "net_profit": -22534.44,
+      "total_return_pct": -0.901
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 2,
+    "train_size": 12424,
+    "test_size": 544,
+    "threshold": 0.48389290764689424,
+    "metrics": {
+      "total_trades": 105,
+      "win_rate": 0.4,
+      "profit_factor": 0.651,
+      "sharpe_ratio": -0.195,
+      "max_drawdown_pct": 0.254,
+      "net_profit": -6099.25,
+      "total_return_pct": -0.244
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 3,
+    "train_size": 12828,
+    "test_size": 5634,
+    "threshold": 0.49283061948010004,
+    "metrics": {
+      "total_trades": 472,
+      "win_rate": 0.316,
+      "profit_factor": 0.466,
+      "sharpe_ratio": -0.351,
+      "max_drawdown_pct": 0.954,
+      "net_profit": -17987.7,
+      "total_return_pct": -0.952
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 4,
+    "train_size": 16462,
+    "test_size": 5518,
+    "threshold": 0.46307397956401203,
+    "metrics": {
+      "total_trades": 852,
+      "win_rate": 0.347,
+      "profit_factor": 0.573,
+      "sharpe_ratio": -0.309,
+      "max_drawdown_pct": 0.99,
+      "net_profit": -24754.08,
+      "total_return_pct": -0.99
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 5,
+    "train_size": 20090,
+    "test_size": 5626,
+    "threshold": 0.5023865527595553,
+    "metrics": {
+      "total_trades": 777,
+      "win_rate": 0.328,
+      "profit_factor": 0.494,
+      "sharpe_ratio": -0.349,
+      "max_drawdown_pct": 0.993,
+      "net_profit": -24800.41,
+      "total_return_pct": -0.992
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 6,
+    "train_size": 23632,
+    "test_size": 5617,
+    "threshold": 0.4768679513639686,
+    "metrics": {
+      "total_trades": 589,
+      "win_rate": 0.367,
+      "profit_factor": 0.609,
+      "sharpe_ratio": -0.245,
+      "max_drawdown_pct": 0.918,
+      "net_profit": -22952.31,
+      "total_return_pct": -0.918
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 7,
+    "train_size": 27520,
+    "test_size": 5747,
+    "threshold": 0.5012172021461961,
+    "metrics": {
+      "total_trades": 665,
+      "win_rate": 0.382,
+      "profit_factor": 0.654,
+      "sharpe_ratio": -0.178,
+      "max_drawdown_pct": 0.884,
+      "net_profit": -22001.29,
+      "total_return_pct": -0.88
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 8,
+    "train_size": 31566,
+    "test_size": 5359,
+    "threshold": 0.5171301972129707,
+    "metrics": {
+      "total_trades": 635,
+      "win_rate": 0.321,
+      "profit_factor": 0.489,
+      "sharpe_ratio": -0.335,
+      "max_drawdown_pct": 0.979,
+      "net_profit": -24458.84,
+      "total_return_pct": -0.978
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 9,
+    "train_size": 34848,
+    "test_size": 5207,
+    "threshold": 0.478540991798373,
+    "metrics": {
+      "total_trades": 908,
+      "win_rate": 0.324,
+      "profit_factor": 0.531,
+      "sharpe_ratio": -0.297,
+      "max_drawdown_pct": 0.993,
+      "net_profit": -24825.0,
+      "total_return_pct": -0.993
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 10,
+    "train_size": 38132,
+    "test_size": 5073,
+    "threshold": 0.47721831923963204,
+    "metrics": {
+      "total_trades": 633,
+      "win_rate": 0.319,
+      "profit_factor": 0.516,
+      "sharpe_ratio": -0.324,
+      "max_drawdown_pct": 0.973,
+      "net_profit": -24289.15,
+      "total_return_pct": -0.972
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 11,
+    "train_size": 41596,
+    "test_size": 4515,
+    "threshold": 0.47832457195176054,
+    "metrics": {
+      "total_trades": 235,
+      "win_rate": 0.362,
+      "profit_factor": 0.65,
+      "sharpe_ratio": -0.187,
+      "max_drawdown_pct": 0.52,
+      "net_profit": -12163.54,
+      "total_return_pct": -0.487
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 12,
+    "train_size": 44888,
+    "test_size": 5529,
+    "threshold": 0.49872661970494087,
+    "metrics": {
+      "total_trades": 899,
+      "win_rate": 0.338,
+      "profit_factor": 0.544,
+      "sharpe_ratio": -0.319,
+      "max_drawdown_pct": 0.996,
+      "net_profit": -12787.6,
+      "total_return_pct": -0.996
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 13,
+    "train_size": 48522,
+    "test_size": 5740,
+    "threshold": 0.5057221301462365,
+    "metrics": {
+      "total_trades": 312,
+      "win_rate": 0.33,
+      "profit_factor": 0.471,
+      "sharpe_ratio": -0.368,
+      "max_drawdown_pct": 0.833,
+      "net_profit": -20600.12,
+      "total_return_pct": -0.824
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 14,
+    "train_size": 52010,
+    "test_size": 5867,
+    "threshold": 0.5045732921689664,
+    "metrics": {
+      "total_trades": 477,
+      "win_rate": 0.388,
+      "profit_factor": 0.674,
+      "sharpe_ratio": -0.204,
+      "max_drawdown_pct": 0.794,
+      "net_profit": -19519.93,
+      "total_return_pct": -0.781
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 15,
+    "train_size": 56294,
+    "test_size": 5775,
+    "threshold": 0.4972290087840492,
+    "metrics": {
+      "total_trades": 791,
+      "win_rate": 0.346,
+      "profit_factor": 0.524,
+      "sharpe_ratio": -0.297,
+      "max_drawdown_pct": 0.991,
+      "net_profit": -5425.94,
+      "total_return_pct": -0.99
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 16,
+    "train_size": 60452,
+    "test_size": 5861,
+    "threshold": 0.5010984617714944,
+    "metrics": {
+      "total_trades": 671,
+      "win_rate": 0.396,
+      "profit_factor": 0.745,
+      "sharpe_ratio": -0.162,
+      "max_drawdown_pct": 0.902,
+      "net_profit": -22010.48,
+      "total_return_pct": -0.88
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 17,
+    "train_size": 64648,
+    "test_size": 5955,
+    "threshold": 0.5153173120426527,
+    "metrics": {
+      "total_trades": 511,
+      "win_rate": 0.407,
+      "profit_factor": 0.661,
+      "sharpe_ratio": -0.162,
+      "max_drawdown_pct": 0.795,
+      "net_profit": -19886.93,
+      "total_return_pct": -0.795
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 18,
+    "train_size": 69344,
+    "test_size": 5707,
+    "threshold": 0.5300443809208334,
+    "metrics": {
+      "total_trades": 571,
+      "win_rate": 0.377,
+      "profit_factor": 0.671,
+      "sharpe_ratio": -0.199,
+      "max_drawdown_pct": 0.901,
+      "net_profit": -4607.68,
+      "total_return_pct": -0.901
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 19,
+    "train_size": 73514,
+    "test_size": 5851,
+    "threshold": 0.5361530362135921,
+    "metrics": {
+      "total_trades": 481,
+      "win_rate": 0.372,
+      "profit_factor": 0.62,
+      "sharpe_ratio": -0.179,
+      "max_drawdown_pct": 0.826,
+      "net_profit": -20534.39,
+      "total_return_pct": -0.821
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 20,
+    "train_size": 77970,
+    "test_size": 5682,
+    "threshold": 0.5395297854445071,
+    "metrics": {
+      "total_trades": 798,
+      "win_rate": 0.395,
+      "profit_factor": 0.855,
+      "sharpe_ratio": -0.093,
+      "max_drawdown_pct": 0.86,
+      "net_profit": -19916.77,
+      "total_return_pct": -0.797
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 21,
+    "train_size": 82286,
+    "test_size": 5980,
+    "threshold": 0.5393788952073888,
+    "metrics": {
+      "total_trades": 704,
+      "win_rate": 0.392,
+      "profit_factor": 0.699,
+      "sharpe_ratio": -0.15,
+      "max_drawdown_pct": 0.904,
+      "net_profit": -4490.02,
+      "total_return_pct": -0.883
+    },
+    "is_viable": false
+  },
+  {
+    "segment": 22,
+    "train_size": 86502,
+    "test_size": 2745,
+    "threshold": 0.5301245123517674,
+    "metrics": {
+      "total_trades": 317,
+      "win_rate": 0.435,
+      "profit_factor": 0.952,
+      "sharpe_ratio": -0.017,
+      "max_drawdown_pct": 0.445,
+      "net_profit": -3620.85,
+      "total_return_pct": -0.145
+    },
+    "is_viable": false
+  }
+]

@@ -21,6 +21,9 @@ Usage:
 
     # Train specific symbol/timeframe
     python institutional_ml_trading_system.py --symbol XAUUSD --tf 15T
+    
+    # Train from local parquet with full features
+    python institutional_ml_trading_system.py --symbol XAUUSD --tf 15T --local
 """
 
 import argparse
@@ -45,9 +48,6 @@ from market_costs import get_tp_sl, get_costs, TP_SL_PARAMS
 load_dotenv()
 
 POLYGON_API_KEY = os.getenv('POLYGON_API_KEY')
-if not POLYGON_API_KEY:
-    print("❌ ERROR: POLYGON_API_KEY not set in .env")
-    sys.exit(1)
 
 # Configuration
 SYMBOLS = ['XAUUSD', 'XAGUSD', 'EURUSD', 'GBPUSD', 'AUDUSD', 'NZDUSD']
@@ -67,6 +67,120 @@ TIMEFRAME_MINUTES = {'5T': 5, '15T': 15, '30T': 30, '1H': 60, '4H': 240}
 # Model save directory
 MODEL_DIR = Path("models_institutional")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
+
+# Local data directory
+FEATURE_STORE = Path("feature_store")
+
+
+def get_feature_columns(df: pd.DataFrame) -> list:
+    """
+    Return the list of columns to use as model features.
+    Includes OHLCV, technical indicators, quote features, and cross-asset features.
+    Excludes timestamp, raw target columns, and any obvious leakage columns.
+    """
+    # Start with all columns
+    all_cols = set(df.columns)
+    
+    # Columns to exclude (non-features or leakage)
+    exclude = {
+        'timestamp', 'target', 'label', 'labels',
+        # Exclude any obvious future-leakage columns if they exist
+        'future_return', 'future_high', 'future_low',
+    }
+    
+    # Remove excluded columns
+    candidate_cols = all_cols - exclude
+    
+    # Define feature prefixes/patterns that should be included
+    # This ensures we capture all technical indicators and derived features
+    feature_patterns = [
+        # OHLCV base features
+        'open', 'high', 'low', 'close', 'volume',
+        
+        # Momentum features
+        'roc_', 'momentum_', 'rsi', 'macd',
+        
+        # Moving averages and price relationships
+        'sma', 'ema', 'vwma', 'vwap',
+        'close_vs_', 'price_vs_', 'distance_from_',
+        
+        # Volatility features
+        'atr', 'atr_pct_', 'historical_vol', 'volatility_',
+        
+        # Bollinger Bands
+        'bb_upper_', 'bb_lower_', 'bb_width_', 'bb_position_',
+        
+        # Stochastics
+        'stoch_', 'stochastic_',
+        
+        # Volume and flow features
+        'obv', 'mfi', 'volume_ratio', 'volume_sma', 'volume_std',
+        'vpt', 'volume_delta',
+        
+        # ADX and trend
+        'adx', 'di_', 'dx',
+        
+        # Price action
+        'high_low_range', 'close_open_diff', 'body_size',
+        'upper_shadow', 'lower_shadow', 'candle_',
+        
+        # Support/Resistance
+        'highest_high', 'lowest_low', 'dist_from_high', 'dist_from_low',
+        
+        # Quote features
+        'bid', 'ask', 'spread', 'mid_price',
+        'bid_ask_imbalance', 'quote_',
+        
+        # Cross-asset features (e.g., XAGUSD when training XAUUSD)
+        'close_XAG', 'volume_XAG', 'close_XAU',
+        'price_ratio', 'ratio_ma', 'ratio_zscore',
+        'correlation_', 'corr_',
+        
+        # Regime and session features
+        'vol_regime', 'trend_regime', 'regime_',
+        'session_', 'is_asian', 'is_london', 'is_ny',
+        
+        # Calendar features
+        'hour_sin', 'hour_cos', 'dow_sin', 'dow_cos',
+        'day_of_week', 'hour_of_day',
+        
+        # Z-scores and normalized features
+        'zscore_', 'z_score_',
+        
+        # Returns
+        'returns', 'log_returns', 'return_',
+    ]
+    
+    # Collect features matching any pattern
+    feature_cols = []
+    for col in sorted(candidate_cols):
+        # Check if column matches any feature pattern
+        if any(pattern in col.lower() for pattern in feature_patterns):
+            feature_cols.append(col)
+    
+    # Ensure we have at least basic OHLCV if they exist
+    basic_ohlcv = ['open', 'high', 'low', 'close', 'volume']
+    for col in basic_ohlcv:
+        if col in candidate_cols and col not in feature_cols:
+            feature_cols.append(col)
+    
+    return sorted(feature_cols)
+
+
+def load_local_features(symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
+    """Load pre-calculated features from local parquet file."""
+    feature_path = FEATURE_STORE / symbol / f"{symbol}_{timeframe}.parquet"
+    
+    if not feature_path.exists():
+        print(f"   ⚠️  Feature file not found: {feature_path}")
+        return None
+    
+    print(f"📂 Loading features from: {feature_path}")
+    df = pd.read_parquet(feature_path)
+    print(f"✅ Loaded {len(df):,} bars with {len(df.columns)} columns")
+    print(f"   Date range: {df['timestamp'].min()} to {df['timestamp'].max()}")
+    
+    return df
 
 
 def fetch_ohlcv_from_polygon(symbol: str, timeframe: str, days_back=730):
@@ -268,7 +382,20 @@ def create_balanced_labels(df: pd.DataFrame, symbol: str, timeframe: str) -> pd.
 
     print(f"   TP: {tp_mult:.1f}x ATR, SL: {sl_mult:.1f}x ATR (R:R = {tp_mult/sl_mult:.2f})")
 
-    atr = df['atr14'].values
+    # Ensure ATR column exists
+    if 'atr14' not in df.columns and 'atr_14' not in df.columns:
+        print("   ⚠️  ATR not found, calculating basic ATR...")
+        high = df['high']
+        low = df['low']
+        close = df['close']
+        tr1 = high - low
+        tr2 = abs(high - close.shift(1))
+        tr3 = abs(low - close.shift(1))
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        df['atr14'] = tr.rolling(window=14).mean()
+    
+    atr_col = 'atr14' if 'atr14' in df.columns else 'atr_14'
+    atr = df[atr_col].values
 
     # Entry at NEXT bar open (realistic!)
     next_bar_opens = df['open'].shift(-1).values
@@ -420,7 +547,7 @@ class InstitutionalModel:
         return np.argmax(self.predict_proba(X), axis=1)
 
 
-def train_model(symbol: str, timeframe: str) -> Optional[Dict]:
+def train_model(symbol: str, timeframe: str, use_local: bool = False) -> Optional[Dict]:
     """Train institutional model for symbol/timeframe."""
 
     print(f"\n{'='*80}")
@@ -428,22 +555,42 @@ def train_model(symbol: str, timeframe: str) -> Optional[Dict]:
     print(f"{'='*80}")
 
     try:
-        # Fetch data
-        df = fetch_ohlcv_from_polygon(symbol, timeframe, days_back=730)
-        if df is None or len(df) < 1000:
-            print(f"❌ Insufficient data ({len(df) if df is not None else 0} bars)")
-            return None
+        # Load data
+        if use_local:
+            df = load_local_features(symbol, timeframe)
+            if df is None:
+                print("   Falling back to Polygon API...")
+                use_local = False
+        
+        if not use_local:
+            df = fetch_ohlcv_from_polygon(symbol, timeframe, days_back=730)
+            if df is None or len(df) < 1000:
+                print(f"❌ Insufficient data ({len(df) if df is not None else 0} bars)")
+                return None
+            # Calculate features for API-fetched data
+            df = calculate_features(df)
 
-        # Features
-        df = calculate_features(df)
+        # Ensure we have required columns
+        if 'timestamp' not in df.columns:
+            print("❌ Missing 'timestamp' column")
+            return None
+        
+        if 'open' not in df.columns or 'high' not in df.columns:
+            print("❌ Missing OHLCV columns")
+            return None
 
         # Labels
         df = create_balanced_labels(df, symbol, timeframe)
 
-        # Select features
-        exclude_cols = ['timestamp', 'target', 'open', 'high', 'low', 'close', 'volume']
-        feature_cols = [col for col in df.columns if col not in exclude_cols]
+        # Get feature columns using intelligent selection
+        feature_cols = get_feature_columns(df)
+        
+        print(f"\n📊 Using {len(feature_cols)} features:")
+        print(f"   First 40: {sorted(feature_cols)[:40]}")
+        if len(feature_cols) > 40:
+            print(f"   ... and {len(feature_cols) - 40} more")
 
+        # Build feature matrix
         X = df[feature_cols].fillna(0).values
         y = df['target'].values
 
@@ -507,8 +654,10 @@ def train_model(symbol: str, timeframe: str) -> Optional[Dict]:
                     'trained_at': datetime.now(timezone.utc).isoformat(),
                     'train_samples': len(X_train),
                     'test_samples': len(X_test),
+                    'num_features': len(feature_cols),
                     'long_short_ratio': float(long_short_ratio),
-                    'status': status
+                    'status': status,
+                    'used_local_features': use_local
                 }
             }, f)
 
@@ -535,6 +684,7 @@ def main():
     parser.add_argument('--symbol', type=str, help='Train specific symbol')
     parser.add_argument('--tf', type=str, help='Train specific timeframe')
     parser.add_argument('--all-timeframes', action='store_true', help='Train all timeframes for symbol')
+    parser.add_argument('--local', action='store_true', help='Use local feature parquet files instead of API')
 
     args = parser.parse_args()
 
@@ -548,20 +698,20 @@ def main():
         # Train everything
         for symbol in SYMBOLS:
             for timeframe in TIMEFRAMES:
-                result = train_model(symbol, timeframe)
+                result = train_model(symbol, timeframe, use_local=args.local)
                 if result:
                     results.append(result)
 
     elif args.symbol and args.all_timeframes:
         # Train all timeframes for one symbol
         for timeframe in TIMEFRAMES:
-            result = train_model(args.symbol, timeframe)
+            result = train_model(args.symbol, timeframe, use_local=args.local)
             if result:
                 results.append(result)
 
     elif args.symbol and args.tf:
         # Train single model
-        result = train_model(args.symbol, args.tf)
+        result = train_model(args.symbol, args.tf, use_local=args.local)
         if result:
             results.append(result)
 
@@ -570,6 +720,7 @@ def main():
         print("  python institutional_ml_trading_system.py --all")
         print("  python institutional_ml_trading_system.py --symbol XAUUSD --all-timeframes")
         print("  python institutional_ml_trading_system.py --symbol XAUUSD --tf 15T")
+        print("  python institutional_ml_trading_system.py --symbol XAUUSD --tf 15T --local")
         return 1
 
     # Summary

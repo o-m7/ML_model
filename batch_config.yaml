@@ -1,0 +1,23 @@
+# Batch Feature Extraction Configuration
+
+# Symbols to extract
+symbols:
+  - XAUUSD
+  - XAGUSD
+  # Add more symbols as needed
+  # - EURUSD
+  # - GBPUSD
+
+# Date range
+start_date: "2020-01-01"
+end_date: "2025-11-17"  # Or leave blank to use today
+
+# Polygon S3 data path (optional, uses default if not specified)
+s3_path: "~/polygon_s3_data"
+
+# Processing mode
+parallel: false  # Set to true for parallel processing
+max_workers: 2   # Number of parallel workers if parallel=true
+
+# Validation
+run_validation_after: true  # Automatically validate after extraction
