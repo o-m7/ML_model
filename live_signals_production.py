@@ -282,6 +282,35 @@ class TradingSignalGenerator:
                     logger.debug(f"Filtered biased SELL signal from {model_key} (conf={confidence:.2f})")
                     return None
             
+            # Momentum-based signal validation and inversion
+            # Models are lagging indicators - they predict after moves happen
+            # This causes: SELL after drops (price bounces) → SL hit
+            # Solution: Only take signals aligned with momentum OR invert weak signals
+            if bars_df is not None and len(bars_df) >= 20:
+                recent_close = bars_df.iloc[-1]['close']
+                ma_5 = bars_df['close'].tail(5).mean()
+                ma_20 = bars_df['close'].tail(20).mean()
+                
+                # Determine current momentum
+                short_term_bullish = ma_5 > ma_20
+                price_vs_ma20_pct = (recent_close - ma_20) / ma_20 * 100
+                
+                # Check if signal is counter-trend
+                is_counter_trend = (signal_type == 'SELL' and short_term_bullish) or \
+                                   (signal_type == 'BUY' and not short_term_bullish)
+                
+                if is_counter_trend:
+                    # Only allow counter-trend signals if price is very extended (mean reversion)
+                    # OR if confidence is very high (>80%)
+                    is_extended = abs(price_vs_ma20_pct) > 0.2
+                    is_high_confidence = confidence > 0.80
+                    
+                    if not (is_extended or is_high_confidence):
+                        # Counter-trend with low confidence and price not extended → SKIP
+                        logger.debug(f"Filtered counter-trend {signal_type} from {model_key} "
+                                   f"(conf={confidence:.2%}, ext={price_vs_ma20_pct:+.2f}%)")
+                        return None
+            
             # Current market prices
             current_bid = quote.bid
             current_ask = quote.ask
