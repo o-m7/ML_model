@@ -39,14 +39,17 @@ load_dotenv()
 class TradingSignalGenerator:
     """Generate complete trading signals with TP/SL/Entry for all models"""
     
-    # Trading parameters (model-adaptive)
-    BASE_TP_MULTIPLIER = 2.0  # Base TP multiplier
+    # Trading parameters - Conservative R:R ratios (1:0.8 to 1:2.2)
+    BASE_TP_MULTIPLIER = 1.5  # Base TP multiplier (reduced from 2.0)
     BASE_SL_MULTIPLIER = 1.0  # Base SL multiplier
     SPREAD_BUFFER = 0.5       # Add 50% of spread to limits
     
-    # Confidence-based adjustments
+    # Confidence-based adjustments (tighter range)
     HIGH_CONFIDENCE_THRESHOLD = 0.75  # Scale TP wider for high confidence
     LOW_CONFIDENCE_THRESHOLD = 0.55   # Tighter SL for low confidence
+    
+    # Quote model bias correction (Quote models favor SELL 2:1)
+    QUOTE_MODEL_BIAS_THRESHOLD = 0.60  # Higher threshold for quote models due to SELL bias
     
     def __init__(self, api_key: str, supabase_url: str, supabase_key: str):
         self.api_key = api_key
@@ -85,6 +88,7 @@ class TradingSignalGenerator:
                         self.features[f'quote_{tf}'] = [line.strip() for line in f]
         
         logger.info(f"  ✓ Loaded {len(self.models)} models")
+        return len(self.models) > 0
         
     async def fetch_live_data(self):
         """Fetch latest quotes and bars"""
@@ -118,18 +122,18 @@ class TradingSignalGenerator:
         - Market volatility (ATR)
         - Recent price action (support/resistance levels)
         """
-        # Base multipliers adjusted by confidence
+        # Base multipliers adjusted by confidence (R:R range 1:0.8 to 1:2.2)
         if confidence >= self.HIGH_CONFIDENCE_THRESHOLD:
-            # High confidence: go for bigger wins, tighter stops
-            tp_mult = self.BASE_TP_MULTIPLIER * (1 + (confidence - 0.75) * 2)  # Scale up to 3x
-            sl_mult = self.BASE_SL_MULTIPLIER * 0.8  # Tighter stop
+            # High confidence: Max R:R of 2.2:1
+            tp_mult = self.BASE_TP_MULTIPLIER * 1.40  # 1.5 * 1.40 = 2.1 max (buffer for 2.2)
+            sl_mult = self.BASE_SL_MULTIPLIER * 0.95  # Slightly tighter stop
         elif confidence <= self.LOW_CONFIDENCE_THRESHOLD:
-            # Low confidence: take smaller wins, wider stops
-            tp_mult = self.BASE_TP_MULTIPLIER * 0.7  # Scale down to 1.4x
-            sl_mult = self.BASE_SL_MULTIPLIER * 1.2  # Wider stop
+            # Low confidence: Min R:R of 0.8:1
+            tp_mult = self.BASE_TP_MULTIPLIER * 0.53  # 1.5 * 0.53 = 0.8 min
+            sl_mult = self.BASE_SL_MULTIPLIER * 1.25  # Wider stop for protection
         else:
-            # Medium confidence: standard
-            tp_mult = self.BASE_TP_MULTIPLIER
+            # Medium confidence: Mid-range R:R ~1.5:1
+            tp_mult = self.BASE_TP_MULTIPLIER  # 1.5x baseline
             sl_mult = self.BASE_SL_MULTIPLIER
         
         # Calculate volatility adjustment from recent price action
@@ -270,6 +274,14 @@ class TradingSignalGenerator:
             signal_type = 'BUY' if pred == 1 else 'SELL'
             confidence = float(max(proba))
             
+            # Apply bias correction for Quote models (heavily favor SELL in training)
+            # Quote models have 2:1 SELL bias, so require higher confidence for SELL
+            if 'quote_' in model_key and signal_type == 'SELL':
+                if confidence < self.QUOTE_MODEL_BIAS_THRESHOLD:
+                    # Skip low-confidence SELL signals from biased quote models
+                    logger.debug(f"Filtered biased SELL signal from {model_key} (conf={confidence:.2f})")
+                    return None
+            
             # Current market prices
             current_bid = quote.bid
             current_ask = quote.ask
@@ -310,6 +322,24 @@ class TradingSignalGenerator:
             risk = abs(entry_market - stop_loss)
             reward = abs(take_profit - entry_market)
             rr_ratio = reward / risk if risk > 0 else 0
+            
+            # Enforce R:R ratio limits (0.8 to 2.2)
+            if rr_ratio > 2.2:
+                # Reduce TP to cap R:R at 2.2
+                reward = risk * 2.2
+                if signal_type == 'BUY':
+                    take_profit = entry_market + reward
+                else:  # SELL
+                    take_profit = entry_market - reward
+                rr_ratio = 2.2
+            elif rr_ratio < 0.8:
+                # Increase TP to meet minimum R:R of 0.8
+                reward = risk * 0.8
+                if signal_type == 'BUY':
+                    take_profit = entry_market + reward
+                else:  # SELL
+                    take_profit = entry_market - reward
+                rr_ratio = 0.8
             
             return {
                 'model': model_key,
