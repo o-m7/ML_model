@@ -34,10 +34,15 @@ wheels/
 .installed.cfg
 *.egg
 
-# ML Models (too large for git, stored in Supabase)
+# ML Models and Training Data (too large for git)
 models_production/*.pkl
 models_production/*.joblib
 models_onnx/*.onnx
+
+# Large parquet files (training data)
+feature_store/XAUUSD/*.parquet
+feature_store/XAUUSD/*.parquet.backup
+feature_store/unified/**/*.parquet
 
 # Logs
 *.log
